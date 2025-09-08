@@ -16,8 +16,8 @@ const Map = dynamic(() => import('@/components/map-component'), {
 
 export default function Home() {
     const [searchQuery, setSearchQuery] = useState('');
-    const [markerPosition, setMarkerPosition] = useState<[number, number] | undefined>([51.5, -0.09]);
-    const [markerPopup, setMarkerPopup] = useState<string>("Ein schönes CSS-Popup.<br> Leicht anpassbar.");
+    const [markerPosition, setMarkerPosition] = useState<[number, number] | undefined>(undefined);
+    const [markerPopup, setMarkerPopup] = useState<string | undefined>(undefined);
     const [isSearching, startSearchTransition] = useTransition();
     const { toast } = useToast();
     
@@ -77,7 +77,7 @@ export default function Home() {
             <main className="h-full w-full p-4">
                 <Map 
                     position={[51.505, -0.09]} 
-                    zoom={13} 
+                    zoom={2} 
                     markerPosition={markerPosition}
                     markerPopup={markerPopup}
                 />
