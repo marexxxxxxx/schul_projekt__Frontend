@@ -27,15 +27,18 @@ export default function MapComponent({ position, zoom, markerPosition, markerPop
         attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
       }).addTo(mapRef.current);
     }
+  }, [position, zoom]);
 
-    // Cleanup on unmount
+  // Cleanup on unmount
+  useEffect(() => {
+    const map = mapRef.current;
     return () => {
-      if (mapRef.current) {
-        mapRef.current.remove();
+      if (map) {
+        map.remove();
         mapRef.current = null;
       }
     };
-  }, [position, zoom]);
+  }, []);
 
   // Update marker and view
   useEffect(() => {
@@ -57,7 +60,9 @@ export default function MapComponent({ position, zoom, markerPosition, markerPop
       
       // Bind popup if provided
       if (markerPopup) {
-        markerRef.current.bindPopup(markerPopup).openPopup();
+        if(markerRef.current) {
+            markerRef.current.bindPopup(markerPopup).openPopup();
+        }
       }
     }
   }, [markerPosition, markerPopup]);
