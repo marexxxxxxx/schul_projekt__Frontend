@@ -46,15 +46,11 @@ export default function Home() {
     };
 
     return (
-        <div className="grid grid-cols-1 md:grid-cols-[400px_1fr] h-screen w-screen bg-background text-foreground overflow-hidden">
-            <aside className="h-full flex flex-col border-r border-border bg-card/50">
-                <div className="p-4">
-                    <h1 className="text-2xl font-bold font-headline text-primary">GeoSuche</h1>
-                    <p className="text-muted-foreground text-sm">Orte finden und auf der Karte anzeigen.</p>
-                </div>
-
-                <div className="p-4 border-b border-t">
-                    <form onSubmit={handleSearch} className="flex gap-2">
+        <div className="h-screen w-screen flex flex-col bg-background text-foreground overflow-hidden">
+            <header className="p-4 border-b z-10 bg-background">
+                <div className="container mx-auto flex items-center justify-center gap-4">
+                     <h1 className="text-2xl font-bold font-headline text-primary mr-4">GeoSuche</h1>
+                    <form onSubmit={handleSearch} className="flex gap-2 w-full max-w-md">
                         <Input 
                             placeholder="Adresse eingeben..."
                             value={searchQuery}
@@ -66,15 +62,9 @@ export default function Home() {
                         </Button>
                     </form>
                 </div>
-                
-                <ScrollArea className="flex-grow">
-                    <div className="p-4 space-y-4">
-                      {/* Der Inhaltsbereich der Seitenleiste bleibt für zukünftige Erweiterungen erhalten */}
-                    </div>
-                </ScrollArea>
-            </aside>
+            </header>
 
-            <main className="h-full w-full p-4">
+            <main className="h-full w-full relative">
                 <Map 
                     position={[51.505, -0.09]} 
                     zoom={2} 
