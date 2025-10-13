@@ -7,7 +7,7 @@ import { Search, Loader2 } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
-import { ScrollArea } from '@/components/ui/scroll-area';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
 const Map = dynamic(() => import('@/components/map-component'), {
     ssr: false,
@@ -16,6 +16,7 @@ const Map = dynamic(() => import('@/components/map-component'), {
 
 export default function Home() {
     const [searchQuery, setSearchQuery] = useState('');
+    const [searchedAddress, setSearchedAddress] = useState<string | undefined>(undefined);
     const [markerPosition, setMarkerPosition] = useState<[number, number] | undefined>(undefined);
     const [markerPopup, setMarkerPopup] = useState<string | undefined>(undefined);
     const [isSearching, startSearchTransition] = useTransition();
@@ -35,7 +36,10 @@ export default function Home() {
                     const { lat, lon, display_name } = data[0];
                     setMarkerPosition([parseFloat(lat), parseFloat(lon)]);
                     setMarkerPopup(display_name);
+                    setSearchedAddress(display_name);
                 } else {
+                    setSearchedAddress(undefined);
+                    setMarkerPosition(undefined);
                     toast({ variant: "destructive", title: "Standort nicht gefunden", description: "Bitte versuchen Sie eine andere Adresse." });
                 }
             } catch (error) {
@@ -64,14 +68,35 @@ export default function Home() {
                 </div>
             </header>
 
-            <main className="h-full w-full relative">
-                <Map 
-                    position={[51.505, -0.09]} 
-                    zoom={2} 
-                    markerPosition={markerPosition}
-                    markerPopup={markerPopup}
-                />
-            </main>
+            <div className="flex flex-1 overflow-hidden">
+                <main className="flex-1 h-full relative">
+                    <Map 
+                        position={[51.505, -0.09]} 
+                        zoom={2} 
+                        markerPosition={markerPosition}
+                        markerPopup={markerPopup}
+                    />
+                </main>
+                <aside className="w-96 bg-card border-l p-4 overflow-y-auto">
+                    <Card className="bg-white">
+                        <CardHeader>
+                            <CardTitle>Gesuchte Adresse</CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                            {isSearching ? (
+                                <div className="flex items-center gap-2">
+                                    <Loader2 className="animate-spin h-5 w-5" />
+                                    <span>Suche läuft...</span>
+                                </div>
+                            ) : searchedAddress ? (
+                                <p>{searchedAddress}</p>
+                            ) : (
+                                <p>Geben Sie eine Adresse ein, um sie auf der Karte anzuzeigen.</p>
+                            )}
+                        </CardContent>
+                    </Card>
+                </aside>
+            </div>
         </div>
     );
 }
