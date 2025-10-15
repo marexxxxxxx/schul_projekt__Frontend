@@ -53,7 +53,7 @@ export default function Home() {
         <div className="h-screen w-screen flex flex-col bg-background text-foreground overflow-hidden">
             <main className="flex-1 h-full relative">
                 <div className="absolute top-4 left-1/2 -translate-x-1/2 z-10 w-full max-w-xl">
-                    <Card className="bg-card/90 shadow-lg backdrop-blur-sm">
+                    <Card className="bg-card/80 shadow-lg backdrop-blur-sm">
                         <CardContent className="p-4">
                             <div className="flex items-center justify-center gap-4">
                                  <h1 className="text-2xl font-bold font-headline text-primary mr-4 whitespace-nowrap">GÖSA- Reisen</h1>
@@ -82,7 +82,7 @@ export default function Home() {
                 
                 {searchedAddress && (
                     <aside className="absolute top-24 right-4 w-96 z-10">
-                        <Card className="bg-card/90 shadow-lg backdrop-blur-sm">
+                        <Card className="bg-card/80 shadow-lg backdrop-blur-sm">
                             <CardHeader>
                                 <CardTitle>Gesuchte Adresse</CardTitle>
                             </CardHeader>
