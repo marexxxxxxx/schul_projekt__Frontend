@@ -97,4 +97,14 @@ body {
   .leaflet-control-attribution a {
     @apply text-primary;
   }
+  .leaflet-control-zoom .leaflet-control-zoom-in,
+  .leaflet-control-zoom .leaflet-control-zoom-out {
+    @apply bg-card text-card-foreground shadow-md transition-colors hover:bg-muted;
+  }
+  .leaflet-control-zoom .leaflet-control-zoom-in {
+    @apply rounded-full rounded-b-none;
+  }
+  .leaflet-control-zoom .leaflet-control-zoom-out {
+    @apply rounded-full rounded-t-none;
+  }
 }
