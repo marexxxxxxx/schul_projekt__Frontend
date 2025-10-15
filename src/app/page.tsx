@@ -56,7 +56,7 @@ export default function Home() {
                     <Card className="bg-card shadow-lg">
                         <CardContent className="p-4">
                             <div className="flex items-center justify-center gap-4">
-                                 <h1 className="text-2xl font-bold font-headline text-primary mr-4">GeoSuche</h1>
+                                 <h1 className="text-2xl font-bold font-headline text-primary mr-4 whitespace-nowrap">GÖSA- Reisen</h1>
                                 <form onSubmit={handleSearch} className="flex gap-2 w-full">
                                     <Input 
                                         placeholder="Adresse eingeben..."
@@ -64,8 +64,8 @@ export default function Home() {
                                         onChange={(e) => setSearchQuery(e.target.value)}
                                         aria-label="Address-Suche"
                                     />
-                                    <Button type="submit" disabled={isSearching || !searchQuery} aria-label="Search">
-                                        {isSearching ? <Loader2 className="animate-spin"/> : <Search />}
+                                    <Button type="submit" disabled={isSearching || !searchQuery} aria-label="Search" className="px-5">
+                                        {isSearching ? <Loader2 className="animate-spin h-5 w-5"/> : <Search className="h-5 w-5" />}
                                     </Button>
                                 </form>
                             </div>
