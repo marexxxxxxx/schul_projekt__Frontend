@@ -74,8 +74,8 @@ export default function Home() {
                 </div>
 
                 <Map 
-                    position={[51.505, -0.09]} 
-                    zoom={2} 
+                    position={[51.1657, 10.4515]} 
+                    zoom={6} 
                     markerPosition={markerPosition}
                     markerPopup={markerPopup}
                 />
