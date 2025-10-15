@@ -21,7 +21,7 @@ export default function MapComponent({ position, zoom, markerPosition, markerPop
   // Initialize map
   useEffect(() => {
     if (typeof window !== 'undefined' && mapContainerRef.current && !mapRef.current) {
-      mapRef.current = L.map(mapContainerRef.current).setView(position, zoom);
+      mapRef.current = L.map(mapContainerRef.current, { attributionControl: false }).setView(position, zoom);
       
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
