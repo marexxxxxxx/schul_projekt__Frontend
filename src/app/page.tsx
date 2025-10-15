@@ -51,7 +51,7 @@ export default function Home() {
 
     return (
         <div className="h-screen w-screen flex flex-col bg-background text-foreground overflow-hidden">
-            <header className="p-4 border-b z-10 bg-background">
+            <header className="p-4 border-b z-20 bg-background">
                 <div className="container mx-auto flex items-center justify-center gap-4">
                      <h1 className="text-2xl font-bold font-headline text-primary mr-4">GeoSuche</h1>
                     <form onSubmit={handleSearch} className="flex gap-2 w-full max-w-md">
@@ -68,17 +68,15 @@ export default function Home() {
                 </div>
             </header>
 
-            <div className="flex flex-1 overflow-hidden">
-                <main className="flex-1 h-full relative">
-                    <Map 
-                        position={[51.505, -0.09]} 
-                        zoom={2} 
-                        markerPosition={markerPosition}
-                        markerPopup={markerPopup}
-                    />
-                </main>
-                <aside className="w-96 bg-card border-l p-4 overflow-y-auto">
-                    <Card className="bg-white">
+            <main className="flex-1 h-full relative">
+                <Map 
+                    position={[51.505, -0.09]} 
+                    zoom={2} 
+                    markerPosition={markerPosition}
+                    markerPopup={markerPopup}
+                />
+                <aside className="absolute top-4 right-4 w-96 z-10">
+                    <Card className="bg-card shadow-lg">
                         <CardHeader>
                             <CardTitle>Gesuchte Adresse</CardTitle>
                         </CardHeader>
@@ -96,7 +94,7 @@ export default function Home() {
                         </CardContent>
                     </Card>
                 </aside>
-            </div>
+            </main>
         </div>
     );
 }
