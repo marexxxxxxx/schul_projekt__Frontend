@@ -56,7 +56,7 @@ export default function Home() {
                     <Card className="bg-card/80 shadow-lg backdrop-blur-sm">
                         <CardContent className="p-4">
                             <div className="flex items-center justify-center gap-4">
-                                 <h1 className="text-2xl font-bold font-headline text-primary mr-4 whitespace-nowrap">GÖSA- Reisen</h1>
+                                 <h1 className="text-2xl font-bold font-headline text-primary mr-4 whitespace-nowrap">GÖSA Reisen</h1>
                                 <form onSubmit={handleSearch} className="flex gap-2 w-full">
                                     <Input 
                                         placeholder="Adresse eingeben..."
