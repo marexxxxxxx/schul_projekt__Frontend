@@ -64,7 +64,7 @@ export default function Home() {
                                         onChange={(e) => setSearchQuery(e.target.value)}
                                         aria-label="Address-Suche"
                                     />
-                                    <Button type="submit" disabled={isSearching || !searchQuery} size="icon" aria-label="Search">
+                                    <Button type="submit" disabled={isSearching || !searchQuery} aria-label="Search">
                                         {isSearching ? <Loader2 className="animate-spin"/> : <Search />}
                                     </Button>
                                 </form>
