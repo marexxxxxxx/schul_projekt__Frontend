@@ -51,49 +51,54 @@ export default function Home() {
 
     return (
         <div className="h-screen w-screen flex flex-col bg-background text-foreground overflow-hidden">
-            <header className="p-4 border-b z-20 bg-background">
-                <div className="container mx-auto flex items-center justify-center gap-4">
-                     <h1 className="text-2xl font-bold font-headline text-primary mr-4">GeoSuche</h1>
-                    <form onSubmit={handleSearch} className="flex gap-2 w-full max-w-md">
-                        <Input 
-                            placeholder="Adresse eingeben..."
-                            value={searchQuery}
-                            onChange={(e) => setSearchQuery(e.target.value)}
-                            aria-label="Address-Suche"
-                        />
-                        <Button type="submit" disabled={isSearching || !searchQuery} size="icon" aria-label="Search">
-                            {isSearching ? <Loader2 className="animate-spin"/> : <Search />}
-                        </Button>
-                    </form>
-                </div>
-            </header>
-
             <main className="flex-1 h-full relative">
+                <div className="absolute top-4 left-1/2 -translate-x-1/2 z-10 w-full max-w-md">
+                    <Card className="bg-card shadow-lg">
+                        <CardContent className="p-4">
+                            <div className="flex items-center justify-center gap-4">
+                                 <h1 className="text-2xl font-bold font-headline text-primary mr-4">GeoSuche</h1>
+                                <form onSubmit={handleSearch} className="flex gap-2 w-full">
+                                    <Input 
+                                        placeholder="Adresse eingeben..."
+                                        value={searchQuery}
+                                        onChange={(e) => setSearchQuery(e.target.value)}
+                                        aria-label="Address-Suche"
+                                    />
+                                    <Button type="submit" disabled={isSearching || !searchQuery} size="icon" aria-label="Search">
+                                        {isSearching ? <Loader2 className="animate-spin"/> : <Search />}
+                                    </Button>
+                                </form>
+                            </div>
+                        </CardContent>
+                    </Card>
+                </div>
+
                 <Map 
                     position={[51.505, -0.09]} 
                     zoom={2} 
                     markerPosition={markerPosition}
                     markerPopup={markerPopup}
                 />
-                <aside className="absolute top-4 right-4 w-96 z-10">
-                    <Card className="bg-card shadow-lg">
-                        <CardHeader>
-                            <CardTitle>Gesuchte Adresse</CardTitle>
-                        </CardHeader>
-                        <CardContent>
-                            {isSearching ? (
-                                <div className="flex items-center gap-2">
-                                    <Loader2 className="animate-spin h-5 w-5" />
-                                    <span>Suche läuft...</span>
-                                </div>
-                            ) : searchedAddress ? (
-                                <p>{searchedAddress}</p>
-                            ) : (
-                                <p>Geben Sie eine Adresse ein, um sie auf der Karte anzuzeigen.</p>
-                            )}
-                        </CardContent>
-                    </Card>
-                </aside>
+                
+                {searchedAddress && (
+                    <aside className="absolute top-24 right-4 w-96 z-10">
+                        <Card className="bg-card shadow-lg">
+                            <CardHeader>
+                                <CardTitle>Gesuchte Adresse</CardTitle>
+                            </CardHeader>
+                            <CardContent>
+                                {isSearching ? (
+                                    <div className="flex items-center gap-2">
+                                        <Loader2 className="animate-spin h-5 w-5" />
+                                        <span>Suche läuft...</span>
+                                    </div>
+                                ) : (
+                                    <p>{searchedAddress}</p>
+                                )}
+                            </CardContent>
+                        </Card>
+                    </aside>
+                )}
             </main>
         </div>
     );
