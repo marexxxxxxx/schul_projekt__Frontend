@@ -8,6 +8,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { fuerteventuraActivities, Activity } from '@/lib/mock-data';
+import ActivityCard from '@/components/activity-card';
 
 const Map = dynamic(() => import('@/components/map-component'), {
     ssr: false,
@@ -17,6 +19,7 @@ const Map = dynamic(() => import('@/components/map-component'), {
 export default function Home() {
     const [searchQuery, setSearchQuery] = useState('');
     const [searchedAddress, setSearchedAddress] = useState<string | undefined>(undefined);
+    const [activities, setActivities] = useState<Activity[]>([]);
     const [markerPosition, setMarkerPosition] = useState<[number, number] | undefined>(undefined);
     const [markerPopup, setMarkerPopup] = useState<string | undefined>(undefined);
     const [isSearching, startSearchTransition] = useTransition();
@@ -27,6 +30,19 @@ export default function Home() {
         if (!searchQuery) return;
 
         startSearchTransition(async () => {
+            setActivities([]);
+            setSearchedAddress(undefined);
+            setMarkerPosition(undefined);
+            setMarkerPopup(undefined);
+
+            if (searchQuery.toLowerCase().trim() === 'fuerteventura') {
+                setActivities(fuerteventuraActivities);
+                setMarkerPosition([28.3587, -14.0537]); // Center of Fuerteventura
+                setMarkerPopup("Fuerteventura");
+                setSearchedAddress("Fuerteventura, Spanien");
+                return;
+            }
+
             try {
                 const response = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(searchQuery)}&format=json&limit=1&addressdetails=1`);
                 if (!response.ok) throw new Error('Fehler beim Abrufen vom Geocoding-Dienst.');
@@ -38,8 +54,6 @@ export default function Home() {
                     setMarkerPopup(display_name);
                     setSearchedAddress(display_name);
                 } else {
-                    setSearchedAddress(undefined);
-                    setMarkerPosition(undefined);
                     toast({ variant: "destructive", title: "Standort nicht gefunden", description: "Bitte versuchen Sie eine andere Adresse." });
                 }
             } catch (error) {
@@ -65,7 +79,7 @@ export default function Home() {
                                         aria-label="Address-Suche"
                                     />
                                     <Button type="submit" disabled={isSearching || !searchQuery} aria-label="Search" className="px-5">
-                                        {isSearching ? <Loader2 className="animate-spin h-5 w-5"/> : <Search className="h-5 w-5" />}
+                                        {isSearching ? <Loader2 className="animate-spin h-5 w-5"/> : <Search className="h-6 w-6" />}
                                     </Button>
                                 </form>
                             </div>
@@ -80,20 +94,28 @@ export default function Home() {
                     markerPopup={markerPopup}
                 />
                 
-                {searchedAddress && (
+                {(searchedAddress || activities.length > 0) && (
                     <aside className="absolute top-24 right-4 w-96 z-10">
-                        <Card className="bg-card/80 shadow-lg backdrop-blur-sm">
+                        <Card className="bg-card/80 shadow-lg backdrop-blur-sm max-h-[calc(100vh-7rem)] overflow-y-auto">
                             <CardHeader>
-                                <CardTitle>Gesuchte Adresse</CardTitle>
+                                <CardTitle>{activities.length > 0 ? "Aktivitäten" : "Gesuchte Adresse"}</CardTitle>
                             </CardHeader>
-                            <CardContent>
+                            <CardContent className="flex flex-col gap-4">
                                 {isSearching ? (
                                     <div className="flex items-center gap-2">
                                         <Loader2 className="animate-spin h-5 w-5" />
                                         <span>Suche läuft...</span>
                                     </div>
                                 ) : (
-                                    <p>{searchedAddress}</p>
+                                    <>
+                                        {activities.length > 0 ? (
+                                            activities.map((activity, index) => (
+                                                <ActivityCard key={index} activity={activity} />
+                                            ))
+                                        ) : (
+                                            <p>{searchedAddress}</p>
+                                        )}
+                                    </>
                                 )}
                             </CardContent>
                         </Card>
