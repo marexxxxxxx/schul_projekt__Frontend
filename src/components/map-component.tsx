@@ -23,7 +23,7 @@ export default function MapComponent({ position, zoom, markerPosition, markerPop
     if (typeof window !== 'undefined' && mapContainerRef.current && !mapRef.current) {
       mapRef.current = L.map(mapContainerRef.current, { attributionControl: false, zoomControl: false }).setView(position, zoom);
       
-      L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+      L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager_labels_under/{z}/{x}/{y}{r}.png', {
         attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
       }).addTo(mapRef.current);
     }
