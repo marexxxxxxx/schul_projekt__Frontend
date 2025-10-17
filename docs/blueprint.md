@@ -1,4 +1,4 @@
-# **App Name**: GeoSearch
+# **App Name**: GÖSA_Reiseplaner
 
 ## Core Features:
 
