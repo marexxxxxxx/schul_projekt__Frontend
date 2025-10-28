@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useTransition } from 'react';
+import { useState, useTransition, useRef, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import { Search, Loader2 } from 'lucide-react';
+import Image from 'next/image';
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -25,9 +26,43 @@ export default function Home() {
     const [isSearching, startSearchTransition] = useTransition();
     const { toast } = useToast();
     
-    const handleSearch = async (e: React.FormEvent) => {
-        e.preventDefault();
-        if (!searchQuery) return;
+    const [suggestions, setSuggestions] = useState<string[]>([]);
+    const searchWrapperRef = useRef<HTMLDivElement>(null);
+
+    const allSuggestions = [
+        "New York City", "London", "Paris", "Tokio", "Peking", "Shanghai", "Dubai", "Singapur", "Hongkong", "Rom", "Kairo", 
+        "Istanbul", "Moskau", "Berlin", "Barcelona", "Amsterdam", "Madrid", "Los Angeles", "Mexiko-Stadt", "São Paulo", 
+        "Rio de Janeiro", "Bangkok", "Delhi", "Mumbai", "Sydney", "Seoul", "Mallorca", "Italien", "Gardasee", "Südtirol", 
+        "Türkei", "Antalya", "Türkische Riviera", "Deutschland", "Ostsee", "Nordsee", "Bayern", "Griechenland", "Kreta", 
+        "Rhodos", "Österreich", "Tirol", "Kroatien", "Niederlande", "Holländische Küste", "Ägypten", "Hurghada", 
+        "Portugal", "Algarve", "Lissabon", "Hamburg", "Wien", "München", "Köln", "Frankfurt am Main"
+    ];
+    // Remove duplicates
+    const uniqueSuggestions = [...new Set(allSuggestions)];
+
+
+    const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const query = e.target.value;
+        setSearchQuery(query);
+        if (query.length > 1) {
+            const filteredSuggestions = uniqueSuggestions.filter(city =>
+                city.toLowerCase().startsWith(query.toLowerCase())
+            );
+            setSuggestions(filteredSuggestions);
+        } else {
+            setSuggestions([]);
+        }
+    };
+
+    const handleSuggestionClick = (suggestion: string) => {
+        setSearchQuery(suggestion);
+        setSuggestions([]);
+        // Trigger search immediately
+        performSearch(suggestion);
+    };
+    
+    const performSearch = (query: string) => {
+        if (!query) return;
 
         startSearchTransition(async () => {
             setActivities([]);
@@ -35,16 +70,16 @@ export default function Home() {
             setMarkerPosition(undefined);
             setMarkerPopup(undefined);
 
-            if (searchQuery.toLowerCase().trim() === 'fuerteventura') {
+            if (query.toLowerCase().trim() === 'fuerteventura') {
                 setActivities(fuerteventuraActivities);
-                setMarkerPosition([28.3587, -14.0537]); // Center of Fuerteventura
+                setMarkerPosition([28.3587, -14.0537]);
                 setMarkerPopup("Fuerteventura");
                 setSearchedAddress("Fuerteventura, Spanien");
                 return;
             }
 
             try {
-                const response = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(searchQuery)}&format=json&limit=1&addressdetails=1`);
+                const response = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=1&addressdetails=1`);
                 if (!response.ok) throw new Error('Fehler beim Abrufen vom Geocoding-Dienst.');
                 
                 const data = await response.json();
@@ -62,26 +97,64 @@ export default function Home() {
             }
         });
     };
+    
+    const handleSearch = (e: React.FormEvent) => {
+        e.preventDefault();
+        setSuggestions([]);
+        performSearch(searchQuery);
+    };
+
+    useEffect(() => {
+        function handleClickOutside(event: MouseEvent) {
+            if (searchWrapperRef.current && !searchWrapperRef.current.contains(event.target as Node)) {
+                setSuggestions([]);
+            }
+        }
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => {
+            document.removeEventListener("mousedown", handleClickOutside);
+        };
+    }, [searchWrapperRef]);
 
     return (
         <div className="h-screen w-screen flex flex-col bg-background text-foreground overflow-hidden">
             <main className="flex-1 h-full relative">
                 <div className="absolute top-4 left-1/2 -translate-x-1/2 z-10 w-full max-w-xl">
-                    <Card className="bg-card/80 shadow-lg backdrop-blur-sm">
+                    <Card className="bg-card/30 shadow-lg backdrop-blur-sm">
                         <CardContent className="p-4">
                             <div className="flex items-center justify-center gap-4">
-                                 <h1 className="text-2xl font-bold font-headline text-primary mr-4 whitespace-nowrap">GÖSA Reisen</h1>
-                                <form onSubmit={handleSearch} className="flex gap-2 w-full">
-                                    <Input 
-                                        placeholder="Adresse eingeben..."
-                                        value={searchQuery}
-                                        onChange={(e) => setSearchQuery(e.target.value)}
-                                        aria-label="Address-Suche"
-                                    />
-                                    <Button type="submit" disabled={isSearching || !searchQuery} aria-label="Search" className="px-5">
-                                        {isSearching ? <Loader2 className="animate-spin h-5 w-5"/> : <Search className="h-6 w-6" />}
-                                    </Button>
-                                </form>
+                                <h1 className="text-2xl font-bold font-headline text-primary mr-4 whitespace-nowrap">GÖSA Reisen</h1>
+                                <div ref={searchWrapperRef} className="w-full relative">
+                                    <form onSubmit={handleSearch} className="flex gap-2 w-full">
+                                        <Input 
+                                            placeholder="Adresse eingeben..."
+                                            value={searchQuery}
+                                            onChange={handleInputChange}
+                                            aria-label="Address-Suche"
+                                            autoComplete="off"
+                                        />
+                                        <Button type="submit" disabled={isSearching || !searchQuery} aria-label="Search" className="px-5">
+                                            {isSearching ? <Loader2 className="animate-spin h-5 w-5"/> : <Search className="h-6 w-6" />}
+                                        </Button>
+                                    </form>
+                                    {suggestions.length > 0 && (
+                                        <Card className="absolute top-full mt-2 w-full bg-card/80 backdrop-blur-sm shadow-lg">
+                                            <CardContent className="p-2">
+                                                <ul className="flex flex-col gap-1">
+                                                    {suggestions.map((suggestion, index) => (
+                                                        <li 
+                                                            key={index}
+                                                            onClick={() => handleSuggestionClick(suggestion)}
+                                                            className="p-2 rounded-md hover:bg-accent cursor-pointer text-sm"
+                                                        >
+                                                            {suggestion}
+                                                        </li>
+                                                    ))}
+                                                </ul>
+                                            </CardContent>
+                                        </Card>
+                                    )}
+                                </div>
                             </div>
                         </CardContent>
                     </Card>
@@ -95,25 +168,27 @@ export default function Home() {
                 />
                 
                 {(searchedAddress || activities.length > 0) && (
-                    <aside className="absolute top-24 right-4 w-96 z-10">
-                        <Card className="bg-card/80 shadow-lg backdrop-blur-sm max-h-[calc(100vh-7rem)] overflow-y-auto">
+                    <aside className="absolute top-24 right-4 w-[720px] z-10">
+                        <Card className="bg-card/30 shadow-lg backdrop-blur-sm max-h-[calc(100vh-7rem)] overflow-y-auto">
                             <CardHeader>
-                                <CardTitle>{activities.length > 0 ? "Aktivitäten" : "Gesuchte Adresse"}</CardTitle>
+                                <CardTitle>{activities.length > 0 ? "Top-Aktivitäten in Fuerteventura" : "Gesuchte Adresse"}</CardTitle>
                             </CardHeader>
-                            <CardContent className="flex flex-col gap-4">
+                            <CardContent>
                                 {isSearching ? (
-                                    <div className="flex items-center gap-2">
-                                        <Loader2 className="animate-spin h-5 w-5" />
-                                        <span>Suche läuft...</span>
+                                    <div className="flex items-center justify-center p-8 gap-2">
+                                        <Loader2 className="animate-spin h-8 w-8 text-primary" />
+                                        <span className="text-lg">Suche läuft...</span>
                                     </div>
                                 ) : (
                                     <>
                                         {activities.length > 0 ? (
-                                            activities.map((activity, index) => (
-                                                <ActivityCard key={index} activity={activity} />
-                                            ))
+                                            <div className="grid grid-cols-2 gap-4">
+                                                {activities.map((activity, index) => (
+                                                    <ActivityCard key={index} activity={activity} />
+                                                ))}
+                                            </div>
                                         ) : (
-                                            <p>{searchedAddress}</p>
+                                            <p className="p-4">{searchedAddress}</p>
                                         )}
                                     </>
                                 )}
