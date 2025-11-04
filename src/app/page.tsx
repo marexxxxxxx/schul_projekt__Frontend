@@ -1,9 +1,8 @@
 "use client";
 
-import { useState, useTransition, useRef, useEffect } from 'react';
+import { useState, useTransition, useRef, useEffect, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import { Search, Loader2 } from 'lucide-react';
-import Image from 'next/image';
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -25,12 +24,9 @@ export default function Home() {
     const [markerPopup, setMarkerPopup] = useState<string | undefined>(undefined);
     const [isSearching, startSearchTransition] = useTransition();
     const { toast } = useToast();
+    const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-    const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        setSearchQuery(e.target.value);
-    };
-
-    const performSearch = (query: string) => {
+    const performSearch = useCallback((query: string) => {
         if (!query) return;
 
         startSearchTransition(async () => {
@@ -65,10 +61,28 @@ export default function Home() {
                 toast({ variant: "destructive", title: "Suchfehler", description: "Während der Suche ist ein Fehler aufgetreten." });
             }
         });
+    }, [startSearchTransition, toast]);
+
+    const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const query = e.target.value;
+        setSearchQuery(query);
+
+        if (searchTimeoutRef.current) {
+            clearTimeout(searchTimeoutRef.current);
+        }
+
+        if (query) {
+             searchTimeoutRef.current = setTimeout(() => {
+                performSearch(query);
+            }, 500); // 500ms debounce delay
+        }
     };
     
     const handleSearch = (e: React.FormEvent) => {
         e.preventDefault();
+        if (searchTimeoutRef.current) {
+            clearTimeout(searchTimeoutRef.current);
+        }
         performSearch(searchQuery);
     };
 
