@@ -15,7 +15,8 @@ export default function ActivityCard({ activity }: ActivityCardProps) {
     return (
         <div 
             className="relative rounded-lg overflow-hidden shadow-lg cursor-pointer transition-all duration-300 ease-in-out"
-            onClick={() => setIsExpanded(!isExpanded)}
+            onMouseEnter={() => setIsExpanded(true)}
+            onMouseLeave={() => setIsExpanded(false)}
         >
             <Image
                 src={activity.image_url}
