@@ -28,6 +28,7 @@ export default function Home() {
     
     const [suggestions, setSuggestions] = useState<string[]>([]);
     const searchWrapperRef = useRef<HTMLDivElement>(null);
+    const inputChangeTimeout = useRef<NodeJS.Timeout>();
 
     const allSuggestions = [
         "New York City", "London", "Paris", "Tokio", "Peking", "Shanghai", "Dubai", "Singapur", "Hongkong", "Rom", "Kairo", 
@@ -44,14 +45,19 @@ export default function Home() {
     const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const query = e.target.value;
         setSearchQuery(query);
-        if (query.length > 1) {
-            const filteredSuggestions = uniqueSuggestions.filter(city =>
-                city.toLowerCase().startsWith(query.toLowerCase())
-            );
-            setSuggestions(filteredSuggestions);
-        } else {
-            setSuggestions([]);
-        }
+
+        clearTimeout(inputChangeTimeout.current);
+
+        inputChangeTimeout.current = setTimeout(() => {
+            if (query.length > 1) {
+                const filteredSuggestions = uniqueSuggestions.filter(city =>
+                    city.toLowerCase().startsWith(query.toLowerCase())
+                );
+                setSuggestions(filteredSuggestions);
+            } else {
+                setSuggestions([]);
+            }
+        }, 250); // wait 250ms after user stops typing
     };
 
     const handleSuggestionClick = (suggestion: string) => {
@@ -113,6 +119,7 @@ export default function Home() {
         document.addEventListener("mousedown", handleClickOutside);
         return () => {
             document.removeEventListener("mousedown", handleClickOutside);
+            clearTimeout(inputChangeTimeout.current);
         };
     }, [searchWrapperRef]);
 
