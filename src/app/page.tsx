@@ -22,7 +22,6 @@ export default function Home() {
     const [searchedAddress, setSearchedAddress] = useState<string | undefined>(undefined);
     const [activities, setActivities] = useState<Activity[]>([]);
     const [markerPosition, setMarkerPosition] = useState<[number, number] | undefined>(undefined);
-    const [markerPopup, setMarkerPopup] = useState<string | undefined>(undefined);
     const [isSearching, startSearchTransition] = useTransition();
     const { toast } = useToast();
 
@@ -33,12 +32,10 @@ export default function Home() {
             setActivities([]);
             setSearchedAddress(undefined);
             setMarkerPosition(undefined);
-            setMarkerPopup(undefined);
-
+            
             if (query.toLowerCase().trim() === 'fuerteventura') {
                 setActivities(fuerteventuraActivities);
                 setMarkerPosition([28.3587, -14.0537]);
-                setMarkerPopup("Fuerteventura");
                 setSearchedAddress("Fuerteventura, Spanien");
                 return;
             }
@@ -51,7 +48,6 @@ export default function Home() {
                 if (data && data.length > 0) {
                     const { lat, lon, display_name } = data[0];
                     setMarkerPosition([parseFloat(lat), parseFloat(lon)]);
-                    setMarkerPopup(display_name);
                     setSearchedAddress(display_name);
                 } else {
                     toast({ variant: "destructive", title: "Standort nicht gefunden", description: "Bitte versuchen Sie eine andere Adresse." });
@@ -103,14 +99,13 @@ export default function Home() {
                     position={[51.1657, 10.4515]} 
                     zoom={6} 
                     markerPosition={markerPosition}
-                    markerPopup={markerPopup}
                 />
                 
                 {(searchedAddress || activities.length > 0 || isSearching) && (
                     <aside className="absolute top-24 right-4 w-[720px] z-10">
                         <Card className="bg-card/30 shadow-lg backdrop-blur-sm max-h-[calc(100vh-7rem)] overflow-y-auto">
                             <CardHeader>
-                                <CardTitle>{isSearching ? "Suche..." : (activities.length > 0 ? "Top-Aktivitäten in Fuerteventura" : "Gesuchte Adresse")}</CardTitle>
+                                <CardTitle>{isSearching ? "Suche..." : (activities.length > 0 ? "Top-Aktivitäten in Fuerteventura" : "Dein Urlaubsziel:")}</CardTitle>
                             </CardHeader>
                             <CardContent>
                                 {isSearching ? (
