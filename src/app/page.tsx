@@ -106,11 +106,11 @@ export default function Home() {
                     markerPopup={markerPopup}
                 />
                 
-                {(searchedAddress || activities.length > 0) && (
+                {(searchedAddress || activities.length > 0 || isSearching) && (
                     <aside className="absolute top-24 right-4 w-[720px] z-10">
                         <Card className="bg-card/30 shadow-lg backdrop-blur-sm max-h-[calc(100vh-7rem)] overflow-y-auto">
                             <CardHeader>
-                                <CardTitle>{activities.length > 0 ? "Top-Aktivitäten in Fuerteventura" : "Gesuchte Adresse"}</CardTitle>
+                                <CardTitle>{isSearching ? "Suche..." : (activities.length > 0 ? "Top-Aktivitäten in Fuerteventura" : "Gesuchte Adresse")}</CardTitle>
                             </CardHeader>
                             <CardContent>
                                 {isSearching ? (
