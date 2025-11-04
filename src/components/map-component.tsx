@@ -59,11 +59,11 @@ export default function MapComponent({ position, zoom, markerPosition, markerPop
       }
       
       // Bind popup if provided
-      if (markerPopup) {
-        if(markerRef.current) {
-            markerRef.current.bindPopup(markerPopup).openPopup();
-        }
-      }
+      // if (markerPopup) {
+      //   if(markerRef.current) {
+      //       markerRef.current.bindPopup(markerPopup).openPopup();
+      //   }
+      // }
     }
   }, [markerPosition, markerPopup]);
 
