@@ -25,48 +25,11 @@ export default function Home() {
     const [markerPopup, setMarkerPopup] = useState<string | undefined>(undefined);
     const [isSearching, startSearchTransition] = useTransition();
     const { toast } = useToast();
-    
-    const [suggestions, setSuggestions] = useState<string[]>([]);
-    const searchWrapperRef = useRef<HTMLDivElement>(null);
-    const inputChangeTimeout = useRef<NodeJS.Timeout>();
-
-    const allSuggestions = [
-        "New York City", "London", "Paris", "Tokio", "Peking", "Shanghai", "Dubai", "Singapur", "Hongkong", "Rom", "Kairo", 
-        "Istanbul", "Moskau", "Berlin", "Barcelona", "Amsterdam", "Madrid", "Los Angeles", "Mexiko-Stadt", "São Paulo", 
-        "Rio de Janeiro", "Bangkok", "Delhi", "Mumbai", "Sydney", "Seoul", "Mallorca", "Italien", "Gardasee", "Südtirol", 
-        "Türkei", "Antalya", "Türkische Riviera", "Deutschland", "Ostsee", "Nordsee", "Bayern", "Griechenland", "Kreta", 
-        "Rhodos", "Österreich", "Tirol", "Kroatien", "Niederlande", "Holländische Küste", "Ägypten", "Hurghada", 
-        "Portugal", "Algarve", "Lissabon", "Hamburg", "Wien", "München", "Köln", "Frankfurt am Main"
-    ];
-    // Remove duplicates
-    const uniqueSuggestions = [...new Set(allSuggestions)];
-
 
     const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const query = e.target.value;
-        setSearchQuery(query);
-
-        clearTimeout(inputChangeTimeout.current);
-
-        inputChangeTimeout.current = setTimeout(() => {
-            if (query.length > 1) {
-                const filteredSuggestions = uniqueSuggestions.filter(city =>
-                    city.toLowerCase().startsWith(query.toLowerCase())
-                );
-                setSuggestions(filteredSuggestions);
-            } else {
-                setSuggestions([]);
-            }
-        }, 250); // wait 250ms after user stops typing
+        setSearchQuery(e.target.value);
     };
 
-    const handleSuggestionClick = (suggestion: string) => {
-        setSearchQuery(suggestion);
-        setSuggestions([]);
-        // Trigger search immediately
-        performSearch(suggestion);
-    };
-    
     const performSearch = (query: string) => {
         if (!query) return;
 
@@ -106,22 +69,8 @@ export default function Home() {
     
     const handleSearch = (e: React.FormEvent) => {
         e.preventDefault();
-        setSuggestions([]);
         performSearch(searchQuery);
     };
-
-    useEffect(() => {
-        function handleClickOutside(event: MouseEvent) {
-            if (searchWrapperRef.current && !searchWrapperRef.current.contains(event.target as Node)) {
-                setSuggestions([]);
-            }
-        }
-        document.addEventListener("mousedown", handleClickOutside);
-        return () => {
-            document.removeEventListener("mousedown", handleClickOutside);
-            clearTimeout(inputChangeTimeout.current);
-        };
-    }, [searchWrapperRef]);
 
     return (
         <div className="h-screen w-screen flex flex-col bg-background text-foreground overflow-hidden">
@@ -131,7 +80,7 @@ export default function Home() {
                         <CardContent className="p-4">
                             <div className="flex items-center justify-center gap-4">
                                 <h1 className="text-2xl font-bold font-headline text-primary mr-4 whitespace-nowrap">GÖSA Reisen</h1>
-                                <div ref={searchWrapperRef} className="w-full relative">
+                                <div className="w-full relative">
                                     <form onSubmit={handleSearch} className="flex gap-2 w-full">
                                         <Input 
                                             placeholder="Adresse eingeben..."
@@ -144,23 +93,6 @@ export default function Home() {
                                             {isSearching ? <Loader2 className="animate-spin h-5 w-5"/> : <Search className="h-6 w-6" />}
                                         </Button>
                                     </form>
-                                    {suggestions.length > 0 && (
-                                        <Card className="absolute top-full mt-2 w-full bg-card/80 backdrop-blur-sm shadow-lg">
-                                            <CardContent className="p-2">
-                                                <ul className="flex flex-col gap-1">
-                                                    {suggestions.map((suggestion, index) => (
-                                                        <li 
-                                                            key={index}
-                                                            onClick={() => handleSuggestionClick(suggestion)}
-                                                            className="p-2 rounded-md hover:bg-accent cursor-pointer text-sm"
-                                                        >
-                                                            {suggestion}
-                                                        </li>
-                                                    ))}
-                                                </ul>
-                                            </CardContent>
-                                        </Card>
-                                    )}
                                 </div>
                             </div>
                         </CardContent>
