@@ -57,11 +57,11 @@ export default function Home() {
             }
         });
     };
-
+    
     const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         setSearchQuery(e.target.value);
     };
-    
+
     const handleSearch = (e: React.FormEvent) => {
         e.preventDefault();
         performSearch(searchQuery);
