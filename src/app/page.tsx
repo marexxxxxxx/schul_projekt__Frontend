@@ -1,9 +1,8 @@
 "use client";
 
-import { useState, useTransition, useRef } from 'react';
+import { useState, useTransition } from 'react';
 import dynamic from 'next/dynamic';
 import { Search, Loader2 } from 'lucide-react';
-import Image from 'next/image';
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -102,7 +101,7 @@ export default function Home() {
                 />
                 
                 {(searchedAddress || activities.length > 0 || isSearching) && (
-                    <aside className="absolute top-24 right-4 w-[720px] z-10">
+                    <aside className="absolute top-24 right-4 w-[360px] z-10">
                         <Card className="bg-card/30 shadow-lg backdrop-blur-sm max-h-[calc(100vh-7rem)] overflow-y-auto">
                             <CardHeader>
                                 <CardTitle>{isSearching ? "Suche..." : (activities.length > 0 ? "Top-Aktivitäten in Fuerteventura" : "Dein Urlaubsziel:")}</CardTitle>
@@ -116,7 +115,7 @@ export default function Home() {
                                 ) : (
                                     <>
                                         {activities.length > 0 ? (
-                                            <div className="grid grid-cols-2 gap-4">
+                                            <div className="grid grid-cols-1 gap-4">
                                                 {activities.map((activity, index) => (
                                                     <ActivityCard key={index} activity={activity} />
                                                 ))}
