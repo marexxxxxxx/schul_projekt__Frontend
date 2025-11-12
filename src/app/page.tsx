@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { fuerteventuraActivities, Activity } from '@/lib/mock-data';
+import { Activity } from '@/lib/mock-data';
 import ActivityCard from '@/components/activity-card';
 
 const Map = dynamic(() => import('@/components/map-component'), {
@@ -21,6 +21,7 @@ export default function Home() {
     const [searchedAddress, setSearchedAddress] = useState<string | undefined>(undefined);
     const [activities, setActivities] = useState<Activity[]>([]);
     const [markerPosition, setMarkerPosition] = useState<[number, number] | undefined>(undefined);
+    const [isLoading, setIsLoading] = useState(false);
     const [isSearching, startSearchTransition] = useTransition();
     const { toast } = useToast();
 
@@ -31,29 +32,87 @@ export default function Home() {
             setActivities([]);
             setSearchedAddress(undefined);
             setMarkerPosition(undefined);
+            setIsLoading(true);
             
-            if (query.toLowerCase().trim() === 'fuerteventura') {
-                setActivities(fuerteventuraActivities);
-                setMarkerPosition([28.3587, -14.0537]);
-                setSearchedAddress("Fuerteventura, Spanien");
-                return;
-            }
-
             try {
-                const response = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=1&addressdetails=1`);
-                if (!response.ok) throw new Error('Fehler beim Abrufen vom Geocoding-Dienst.');
+                const geoResponse = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=1&addressdetails=1`);
+                if (!geoResponse.ok) throw new Error('Fehler beim Abrufen vom Geocoding-Dienst.');
                 
-                const data = await response.json();
-                if (data && data.length > 0) {
-                    const { lat, lon, display_name } = data[0];
+                const geoData = await geoResponse.json();
+                if (geoData && geoData.length > 0) {
+                    const { lat, lon, display_name } = geoData[0];
                     setMarkerPosition([parseFloat(lat), parseFloat(lon)]);
                     setSearchedAddress(display_name);
                 } else {
                     toast({ variant: "destructive", title: "Standort nicht gefunden", description: "Bitte versuchen Sie eine andere Adresse." });
+                    setIsLoading(false);
+                    return;
                 }
             } catch (error) {
                 console.error(error);
-                toast({ variant: "destructive", title: "Suchfehler", description: "Während der Suche ist ein Fehler aufgetreten." });
+                toast({ variant: "destructive", title: "Fehler beim Geocoding", description: "Die Adresse konnte nicht gefunden werden." });
+                setIsLoading(false);
+                return;
+            }
+
+            try {
+                const searchResponse = await fetch(`http://127.0.0.1:8000/get_location/${encodeURIComponent(query)}`, {
+                    method: 'GET',
+                });
+                if (!searchResponse.ok) throw new Error('Fehler bei der Suchanfrage an den Backend-Service.');
+                
+                const { job_id } = await searchResponse.json();
+
+                const eventSource = new EventSource(`http://127.0.0.1:8000/stream/${job_id}`);
+
+                eventSource.onopen = () => {
+                    console.log("SSE connection established.");
+                };
+
+                eventSource.onmessage = (event) => {
+                    console.log("SSE message received:", event.data);
+                    const data = JSON.parse(event.data);
+
+                    if (data.status === 'in progress') {
+                        console.log("Search job is in progress.");
+                        return;
+                    }
+
+                    if (data.status === 'COMPLETED' && Array.isArray(data.result)) {
+                        const mappedActivities: Activity[] = data.result.map((act: any) => ({
+                            title: act.name || 'Unbenannte Aktivität',
+                            rating_average: act.rating_average || 0,
+                            rating_count: act.rating_count || 0,
+                            price_value: act.price_value || 0,
+                            price_currency: act.price_currency || 'EUR',
+                            price_unit: act.price_unit || 'Person',
+                            duration_min_hours: act.duration_min_hours || 0,
+                            activity_url: act.url || '#',
+                            image_url: 'https://via.placeholder.com/350x200',
+                        }));
+                        
+                        setActivities(mappedActivities);
+                        setIsLoading(false);
+                        eventSource.close();
+                        console.log("EventSource connection closed after receiving COMPLETED status.");
+                    } else if (data.status === 'FAILED') {
+                        toast({ variant: "destructive", title: "Fehler bei der Suche", description: "Die Suche nach Aktivitäten ist fehlgeschlagen." });
+                        setIsLoading(false);
+                        eventSource.close();
+                    }
+                };
+
+                eventSource.onerror = (err) => {
+                    console.error("EventSource failed:", err);
+                    toast({ variant: "destructive", title: "Fehler beim Laden der Aktivitäten", description: "Die Verbindung zum Server wurde unterbrochen." });
+                    setIsLoading(false);
+                    eventSource.close();
+                };
+
+            } catch (error) {
+                console.error(error);
+                toast({ variant: "destructive", title: "Backend-Fehler", description: "Es gab ein Problem beim Kontaktieren des Backends." });
+                setIsLoading(false);
             }
         });
     };
@@ -66,6 +125,8 @@ export default function Home() {
         e.preventDefault();
         performSearch(searchQuery);
     };
+
+    const showLoader = isSearching || isLoading;
 
     return (
         <div className="h-screen w-screen flex flex-col bg-background text-foreground overflow-hidden">
@@ -84,8 +145,8 @@ export default function Home() {
                                             aria-label="Address-Suche"
                                             autoComplete="off"
                                         />
-                                        <Button type="submit" disabled={isSearching || !searchQuery} aria-label="Search" className="px-5">
-                                            {isSearching ? <Loader2 className="animate-spin h-5 w-5"/> : <Search className="h-6 w-6" />}
+                                        <Button type="submit" disabled={showLoader || !searchQuery} aria-label="Search" className="px-5">
+                                            {showLoader ? <Loader2 className="animate-spin h-5 w-5"/> : <Search className="h-6 w-6" />}
                                         </Button>
                                     </form>
                                 </div>
@@ -100,14 +161,14 @@ export default function Home() {
                     markerPosition={markerPosition}
                 />
                 
-                {(searchedAddress || activities.length > 0 || isSearching) && (
+                {(searchedAddress || activities.length > 0 || showLoader) && (
                     <aside className="absolute top-24 right-4 w-[360px] z-10">
                         <Card className="bg-card/30 shadow-lg backdrop-blur-sm max-h-[calc(100vh-7rem)] overflow-y-auto">
                             <CardHeader>
-                                <CardTitle>{isSearching ? "Suche..." : (activities.length > 0 ? "Top-Aktivitäten in Fuerteventura" : "Dein Urlaubsziel:")}</CardTitle>
+                                <CardTitle>{showLoader ? "Suche..." : (activities.length > 0 ? `Top-Aktivitäten in ${searchQuery}` : "Dein Urlaubsziel:")}</CardTitle>
                             </CardHeader>
                             <CardContent>
-                                {isSearching ? (
+                                {showLoader ? (
                                     <div className="flex items-center justify-center p-8 gap-2">
                                         <Loader2 className="animate-spin h-8 w-8 text-primary" />
                                         <span className="text-lg">Suche läuft...</span>
