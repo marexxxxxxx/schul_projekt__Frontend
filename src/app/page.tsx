@@ -33,11 +33,11 @@ export default function Home() {
             setSearchedAddress(undefined);
             setMarkerPosition(undefined);
             setIsLoading(true);
-            
+
             try {
                 const geoResponse = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=1&addressdetails=1`);
                 if (!geoResponse.ok) throw new Error('Fehler beim Abrufen vom Geocoding-Dienst.');
-                
+
                 const geoData = await geoResponse.json();
                 if (geoData && geoData.length > 0) {
                     const { lat, lon, display_name } = geoData[0];
@@ -56,20 +56,24 @@ export default function Home() {
             }
 
             try {
+                const searchResponsea = await fetch(`http://127.0.0.1:8000/location/${encodeURIComponent(query)}`, {
+                    method: 'GET',
+                });
+                console.log(searchResponsea);
+
                 const searchResponse = await fetch(`http://127.0.0.1:8000/get_location/${encodeURIComponent(query)}`, {
                     method: 'GET',
                 });
-                if (!searchResponse.ok) throw new Error('Fehler bei der Suchanfrage an den Backend-Service.');
-                
-                const { job_id } = await searchResponse.json();
+                if (!searchResponse.ok) throw new Error('Fehler bei der Suchanfrage an den Backend-Service. Get_location');
 
+                const { job_id } = await searchResponse.json();
                 const eventSource = new EventSource(`http://127.0.0.1:8000/stream/${job_id}`);
 
                 eventSource.onopen = () => {
                     console.log("SSE connection established.");
                 };
 
-                eventSource.onmessage = (event) => {
+                    eventSource.onmessage = (event) => {
                     console.log("SSE message received:", event.data);
                     const data = JSON.parse(event.data);
 
@@ -90,7 +94,7 @@ export default function Home() {
                             activity_url: act.url || '#',
                             image_url: 'https://via.placeholder.com/350x200',
                         }));
-                        
+
                         setActivities(mappedActivities);
                         setIsLoading(false);
                         eventSource.close();
@@ -109,14 +113,15 @@ export default function Home() {
                     eventSource.close();
                 };
 
-            } catch (error) {
+
+            } catch(error){
                 console.error(error);
                 toast({ variant: "destructive", title: "Backend-Fehler", description: "Es gab ein Problem beim Kontaktieren des Backends." });
                 setIsLoading(false);
             }
         });
     };
-    
+
     const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         setSearchQuery(e.target.value);
     };
@@ -138,7 +143,7 @@ export default function Home() {
                                 <h1 className="text-2xl font-bold font-headline text-primary mr-4 whitespace-nowrap">GÖSA Reisen</h1>
                                 <div className="w-full relative">
                                     <form onSubmit={handleSearch} className="flex gap-2 w-full">
-                                        <Input 
+                                        <Input
                                             placeholder="Adresse eingeben..."
                                             value={searchQuery}
                                             onChange={handleInputChange}
@@ -155,12 +160,12 @@ export default function Home() {
                     </Card>
                 </div>
 
-                <Map 
-                    position={[51.1657, 10.4515]} 
-                    zoom={6} 
+                <Map
+                    position={[51.1657, 10.4515]}
+                    zoom={6}
                     markerPosition={markerPosition}
                 />
-                
+
                 {(searchedAddress || activities.length > 0 || showLoader) && (
                     <aside className="absolute top-24 right-4 w-[360px] z-10">
                         <Card className="bg-card/30 shadow-lg backdrop-blur-sm max-h-[calc(100vh-7rem)] overflow-y-auto">
