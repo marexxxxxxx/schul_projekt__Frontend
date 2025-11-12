@@ -63,35 +63,73 @@ export default function Home() {
                 return;
             }
 
-            try {
-                const searchResponsea = await fetch(`http://127.0.0.1:8000/location/${encodeURIComponent(query)}`, {
-                    method: 'GET',
-                });
-                console.log(searchResponsea);
+            if (searchType === 'fast') {
+                try {
+                    const searchResponse = await fetch(`http://127.0.0.1:8000/get_location/${encodeURIComponent(query)}`, {
+                        method: 'GET',
+                    });
+                    if (!searchResponse.ok) throw new Error('Fehler bei der Suchanfrage an den Backend-Service. Get_location');
 
-                const searchResponse = await fetch(`http://127.0.0.1:8000/get_location/${encodeURIComponent(query)}`, {
-                    method: 'GET',
-                });
-                if (!searchResponse.ok) throw new Error('Fehler bei der Suchanfrage an den Backend-Service. Get_location');
+                    const { job_id } = await searchResponse.json();
+                    const eventSource = new EventSource(`http://127.0.0.1:8000/stream/${job_id}`);
 
-                const { job_id } = await searchResponse.json();
-                const eventSource = new EventSource(`http://127.0.0.1:8000/stream/${job_id}`);
-
-                eventSource.onopen = () => {
-                    console.log("SSE connection established.");
-                };
+                    eventSource.onopen = () => console.log("SSE connection established.");
 
                     eventSource.onmessage = (event) => {
-                    console.log("SSE message received:", event.data);
-                    const data = JSON.parse(event.data);
+                        console.log("SSE message received:", event.data);
+                        const data = JSON.parse(event.data);
 
-                    if (data.status === 'in progress') {
-                        console.log("Search job is in progress.");
-                        return;
-                    }
+                        if (data.status === 'in progress') {
+                            console.log("Search job is in progress.");
+                            return;
+                        }
 
-                    if (data.status === 'COMPLETED' && Array.isArray(data.result)) {
-                        const mappedActivities: Activity[] = data.result.map((act: any) => ({
+                        if (data.status === 'COMPLETED' && Array.isArray(data.result)) {
+                            const mappedActivities: Activity[] = data.result.map((act: any) => ({
+                                title: act.name || 'Unbenannte Aktivität',
+                                rating_average: act.rating_average || 0,
+                                rating_count: act.rating_count || 0,
+                                price_value: act.price_value || 0,
+                                price_currency: act.price_currency || 'EUR',
+                                price_unit: act.price_unit || 'Person',
+                                duration_min_hours: act.duration_min_hours || 0,
+                                activity_url: act.url || '#',
+                                image_url: 'https://via.placeholder.com/350x200',
+                            }));
+
+                            setActivities(mappedActivities);
+                            setIsLoading(false);
+                            eventSource.close();
+                            console.log("EventSource connection closed after receiving COMPLETED status.");
+                        } else if (data.status === 'FAILED') {
+                            toast({ variant: "destructive", title: "Fehler bei der Suche", description: "Die Suche nach Aktivitäten ist fehlgeschlagen." });
+                            setIsLoading(false);
+                            eventSource.close();
+                        }
+                    };
+
+                    eventSource.onerror = (err) => {
+                        console.error("EventSource failed:", err);
+                        toast({ variant: "destructive", title: "Fehler beim Laden der Aktivitäten", description: "Die Verbindung zum Server wurde unterbrochen." });
+                        setIsLoading(false);
+                        eventSource.close();
+                    };
+                } catch(error) {
+                    console.error(error);
+                    toast({ variant: "destructive", title: "Backend-Fehler", description: "Es gab ein Problem beim Kontaktieren des Backends." });
+                    setIsLoading(false);
+                }
+            } else { // Deepsearch
+                try {
+                    const searchResponse = await fetch(`http://127.0.0.1:8000/location/${encodeURIComponent(query)}`, {
+                        method: 'GET',
+                    });
+                    if (!searchResponse.ok) throw new Error('Fehler bei der Deepsearch-Anfrage an den Backend-Service.');
+
+                    const result = await searchResponse.json();
+                    
+                    if (Array.isArray(result)) {
+                        const mappedActivities: Activity[] = result.map((act: any) => ({
                             title: act.name || 'Unbenannte Aktivität',
                             rating_average: act.rating_average || 0,
                             rating_count: act.rating_count || 0,
@@ -102,30 +140,17 @@ export default function Home() {
                             activity_url: act.url || '#',
                             image_url: 'https://via.placeholder.com/350x200',
                         }));
-
                         setActivities(mappedActivities);
-                        setIsLoading(false);
-                        eventSource.close();
-                        console.log("EventSource connection closed after receiving COMPLETED status.");
-                    } else if (data.status === 'FAILED') {
-                        toast({ variant: "destructive", title: "Fehler bei der Suche", description: "Die Suche nach Aktivitäten ist fehlgeschlagen." });
-                        setIsLoading(false);
-                        eventSource.close();
+                    } else {
+                        throw new Error("Unerwartetes Antwortformat vom Server bei Deepsearch erhalten.");
                     }
-                };
 
-                eventSource.onerror = (err) => {
-                    console.error("EventSource failed:", err);
-                    toast({ variant: "destructive", title: "Fehler beim Laden der Aktivitäten", description: "Die Verbindung zum Server wurde unterbrochen." });
+                } catch(error) {
+                    console.error(error);
+                    toast({ variant: "destructive", title: "Fehler bei der Deepsearch", description: "Es konnte keine Aktivitäten für den Standort gefunden werden" });
+                } finally {
                     setIsLoading(false);
-                    eventSource.close();
-                };
-
-
-            } catch(error){
-                console.error(error);
-                toast({ variant: "destructive", title: "Backend-Fehler", description: "Es gab ein Problem beim Kontaktieren des Backends." });
-                setIsLoading(false);
+                }
             }
         });
     };
