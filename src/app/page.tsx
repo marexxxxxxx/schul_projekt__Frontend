@@ -10,6 +10,13 @@ import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Activity } from '@/lib/mock-data';
 import ActivityCard from '@/components/activity-card';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 const Map = dynamic(() => import('@/components/map-component'), {
     ssr: false,
@@ -23,6 +30,7 @@ export default function Home() {
     const [markerPosition, setMarkerPosition] = useState<[number, number] | undefined>(undefined);
     const [isLoading, setIsLoading] = useState(false);
     const [isSearching, startSearchTransition] = useTransition();
+    const [searchType, setSearchType] = useState("fast");
     const { toast } = useToast();
 
     const performSearch = (query: string) => {
@@ -150,6 +158,15 @@ export default function Home() {
                                             aria-label="Address-Suche"
                                             autoComplete="off"
                                         />
+                                        <Select value={searchType} onValueChange={setSearchType}>
+                                            <SelectTrigger className="w-[180px]">
+                                                <SelectValue placeholder="Search Type" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="fast">Fastsearch</SelectItem>
+                                                <SelectItem value="deep">Deepsearch</SelectItem>
+                                            </SelectContent>
+                                        </Select>
                                         <Button type="submit" disabled={showLoader || !searchQuery} aria-label="Search" className="px-5">
                                             {showLoader ? <Loader2 className="animate-spin h-5 w-5"/> : <Search className="h-6 w-6" />}
                                         </Button>
