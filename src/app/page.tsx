@@ -173,9 +173,14 @@ export default function Home() {
             const url = `http://127.0.0.1:8000/${endpoint}/${encodeURIComponent(query)}`;
             
             addDebugInfo(`Öffne SSE-Stream: ${url}`);
-            
+            const antwort = await fetch(url);
+            if(!antwort.ok){
+                throw console.error("keine antwort");
+                
+            }
             const eventSource = new EventSource(url);
             setCurrentEventSource(eventSource);
+            const new_url = `http://127.0.0.1:8000/stream/${encodeURIComponent(antwort.job_id)}`;
 
             eventSource.onopen = () => {
                 addDebugInfo("✅ SSE-Verbindung hergestellt");
