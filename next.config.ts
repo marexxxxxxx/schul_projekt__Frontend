@@ -1,4 +1,4 @@
-import type { NextConfig } from 'next'
+import type {NextConfig} from 'next';
 
 const nextConfig: NextConfig = {
   /* config options here */
@@ -36,14 +36,15 @@ const nextConfig: NextConfig = {
         port: '',
         pathname: '/**',
       },
+      // HIER IST DER NEUE EINTRAG:
       {
-        protocol: 'https',
+        protocol: 'https', // via.placeholder.com verwendet HTTPS
         hostname: 'via.placeholder.com',
         port: '',
         pathname: '/**',
       }
     ],
   },
-}
+};
 
-export default nextConfig
+export default nextConfig;
