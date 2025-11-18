@@ -10,6 +10,13 @@ import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Activity } from '@/lib/mock-data';
 import ActivityCard from '@/components/activity-card';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 // Error Handler Klassen
 interface ActivityMappingError extends Error {
@@ -282,8 +289,12 @@ interface ActivityWithNullableImage extends Omit<Activity, 'image_url'> {
   image_url: string | null;
 }
 
+// Suchmodus Typ
+type SearchMode = 'fastsearch' | 'deepsearch' | 'none';
+
 export default function Home() {
     const [searchQuery, setSearchQuery] = useState('');
+    const [searchMode, setSearchMode] = useState<SearchMode>('none');
     const [searchedAddress, setSearchedAddress] = useState<string | undefined>(undefined);
     const [activities, setActivities] = useState<ActivityWithNullableImage[]>([]);
     const [markerPosition, setMarkerPosition] = useState<[number, number] | undefined>(undefined);
@@ -291,16 +302,17 @@ export default function Home() {
     const [isSearching, startSearchTransition] = useTransition();
     const { toast } = useToast();
 
-    const performSearch = (query: string) => {
-        if (!query) return;
-
+    // Fastsearch Funktion
+    const performFastSearch = (query: string) => {
+        console.log("🚀 Fastsearch gestartet für:", query);
+        
         startSearchTransition(async () => {
             setActivities([]);
             setSearchedAddress(undefined);
             setMarkerPosition(undefined);
             setIsLoading(true);
 
-            // Geocoding Teil
+            // Geocoding Teil (gleich für beide Modi)
             try {
                 const geoResponse = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=1&addressdetails=1`);
                 if (!geoResponse.ok) throw new Error('Fehler beim Abrufen vom Geocoding-Dienst.');
@@ -322,36 +334,35 @@ export default function Home() {
                 return;
             }
 
-            // Backend-Suche Teil
+            // Fastsearch Backend-Suche
             try {
-                const searchResponse = await fetch(`http://127.0.0.1:8000/get_location/${encodeURIComponent(query)}`, {
+                const searchResponse = await fetch(`http://127.0.0.1:8000/location/${encodeURIComponent(query)}?search_mode=fastsearch`, {
                     method: 'GET',
                 });
                 
-                if (!searchResponse.ok) throw new Error('Fehler bei der Suchanfrage an den Backend-Service. Get_location');
+                if (!searchResponse.ok) throw new Error('Fehler bei der Fastsearch-Anfrage an den Backend-Service.');
 
                 const { job_id } = await searchResponse.json();
                 const eventSource = new EventSource(`http://127.0.0.1:8000/stream/${job_id}`);
 
                 eventSource.onopen = () => {
-                    console.log("SSE connection established.");
+                    console.log("🚀 Fastsearch SSE connection established.");
                 };
 
                 eventSource.onmessage = (event) => {
-                    console.log("SSE message received:", event.data);
+                    console.log("🚀 Fastsearch SSE message received:", event.data);
                     
                     try {
                         const data = JSON.parse(event.data);
-                        console.log("Parsed SSE data:", data);
+                        console.log("🚀 Fastsearch parsed SSE data:", data);
 
-                        // Das result-Feld ist ein JSON-String, der nochmal geparst werden muss
                         if (data.result && typeof data.result === 'string') {
                             try {
                                 const parsedResult = JSON.parse(data.result);
-                                console.log("Parsed result:", parsedResult);
+                                console.log("🚀 Fastsearch parsed result:", parsedResult);
                                 
                                 if (parsedResult.status === 'in progress') {
-                                    console.log("Search job is in progress.");
+                                    console.log("🚀 Fastsearch job is in progress.");
                                     return;
                                 }
 
@@ -360,44 +371,48 @@ export default function Home() {
                                     const result = errorHandler.mapActivities(parsedResult);
                                     
                                     if (result.hasErrors) {
-                                        console.warn(`Aktivitäten wurden mit ${result.errors.length} Fehlern verarbeitet:`);
+                                        console.warn(`🚀 Fastsearch: Aktivitäten wurden mit ${result.errors.length} Fehlern verarbeitet:`);
                                         console.table(errorHandler.getErrorStats().byCode);
                                     }
 
-                                    // Type assertion da wir wissen dass image_url nun null sein kann
                                     const mappedActivities = result.activities as ActivityWithNullableImage[];
-                                    console.log("Successfully mapped activities:", mappedActivities.length);
-                                    console.log("Activities with images:", mappedActivities.filter(a => a.image_url).length);
+                                    console.log("🚀 Fastsearch successfully mapped activities:", mappedActivities.length);
                                     
                                     setActivities(mappedActivities);
                                     setIsLoading(false);
                                     eventSource.close();
-                                    console.log("EventSource connection closed after receiving COMPLETED status.");
+                                    console.log("🚀 Fastsearch EventSource connection closed.");
+                                    
+                                    toast({
+                                        variant: "default",
+                                        title: "Fastsearch abgeschlossen",
+                                        description: `${mappedActivities.length} Aktivitäten gefunden`
+                                    });
                                 } else if (parsedResult.status === 'failed' || parsedResult.status === 'FAILED' || parsedResult.status === 'error') {
                                     toast({ 
                                         variant: "destructive", 
-                                        title: "Fehler bei der Suche", 
-                                        description: parsedResult.message || "Die Suche nach Aktivitäten ist fehlgeschlagen." 
+                                        title: "Fastsearch fehlgeschlagen", 
+                                        description: parsedResult.message || "Die Fastsearch ist fehlgeschlagen." 
                                     });
                                     setIsLoading(false);
                                     eventSource.close();
                                 }
                             } catch (innerParseError) {
-                                console.error("Fehler beim Parsen des result-Strings:", innerParseError, "Raw result:", data.result);
+                                console.error("🚀 Fehler beim Parsen des Fastsearch result-Strings:", innerParseError);
                             }
                         } else {
-                            console.error("Unerwartetes Datenformat: result ist kein String oder fehlt");
+                            console.error("🚀 Unerwartetes Fastsearch Datenformat");
                         }
                     } catch (parseError) {
-                        console.error("Fehler beim Parsen der SSE-Nachricht:", parseError, "Rohe Daten:", event.data);
+                        console.error("🚀 Fehler beim Parsen der Fastsearch SSE-Nachricht:", parseError);
                     }
                 };
 
                 eventSource.onerror = (error) => {
-                    console.error("SSE Verbindungsfehler:", error);
+                    console.error("🚀 Fastsearch SSE Verbindungsfehler:", error);
                     toast({ 
                         variant: "destructive", 
-                        title: "Verbindungsfehler", 
+                        title: "Fastsearch Verbindungsfehler", 
                         description: "Die Verbindung zum Server wurde unterbrochen." 
                     });
                     setIsLoading(false);
@@ -405,15 +420,162 @@ export default function Home() {
                 };
 
             } catch (error) {
-                console.error(error);
+                console.error("🚀 Fastsearch Fehler:", error);
                 toast({ 
                     variant: "destructive", 
-                    title: "Fehler bei der Suchanfrage", 
+                    title: "Fastsearch Fehler", 
                     description: "Die Verbindung zum Server konnte nicht hergestellt werden." 
                 });
                 setIsLoading(false);
             }
         });
+    };
+
+    // Deepsearch Funktion
+    const performDeepSearch = (query: string) => {
+        console.log("🔍 Deepsearch gestartet für:", query);
+        
+        startSearchTransition(async () => {
+            setActivities([]);
+            setSearchedAddress(undefined);
+            setMarkerPosition(undefined);
+            setIsLoading(true);
+
+            // Geocoding Teil (gleich für beide Modi)
+            try {
+                const geoResponse = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=1&addressdetails=1`);
+                if (!geoResponse.ok) throw new Error('Fehler beim Abrufen vom Geocoding-Dienst.');
+
+                const geoData = await geoResponse.json();
+                if (geoData && geoData.length > 0) {
+                    const { lat, lon, display_name } = geoData[0];
+                    setMarkerPosition([parseFloat(lat), parseFloat(lon)]);
+                    setSearchedAddress(display_name);
+                } else {
+                    toast({ variant: "destructive", title: "Standort nicht gefunden", description: "Bitte versuchen Sie eine andere Adresse." });
+                    setIsLoading(false);
+                    return;
+                }
+            } catch (error) {
+                console.error(error);
+                toast({ variant: "destructive", title: "Fehler beim Geocoding", description: "Die Adresse konnte nicht gefunden werden." });
+                setIsLoading(false);
+                return;
+            }
+
+            // Deepsearch Backend-Suche
+            try {
+                const searchResponse = await fetch(`http://127.0.0.1:8000/create_data/${encodeURIComponent(query)}?search_mode=deepsearch`, {
+                    method: 'GET',
+                });
+                
+                if (!searchResponse.ok) throw new Error('Fehler bei der Deepsearch-Anfrage an den Backend-Service.');
+
+                const { job_id } = await searchResponse.json();
+                const eventSource = new EventSource(`http://127.0.0.1:8000/stream/${job_id}`);
+
+                eventSource.onopen = () => {
+                    console.log("🔍 Deepsearch SSE connection established.");
+                };
+
+                eventSource.onmessage = (event) => {
+                    console.log("🔍 Deepsearch SSE message received:", event.data);
+                    
+                    try {
+                        const data = JSON.parse(event.data);
+                        console.log("🔍 Deepsearch parsed SSE data:", data);
+
+                        if (data.result && typeof data.result === 'string') {
+                            try {
+                                const parsedResult = JSON.parse(data.result);
+                                console.log("🔍 Deepsearch parsed result:", parsedResult);
+                                
+                                if (parsedResult.status === 'in progress') {
+                                    console.log("🔍 Deepsearch job is in progress.");
+                                    return;
+                                }
+
+                                if (parsedResult.status === 'completed' && Array.isArray(parsedResult.result)) {
+                                    const errorHandler = new ActivityErrorHandler();
+                                    const result = errorHandler.mapActivities(parsedResult);
+                                    
+                                    if (result.hasErrors) {
+                                        console.warn(`🔍 Deepsearch: Aktivitäten wurden mit ${result.errors.length} Fehlern verarbeitet:`);
+                                        console.table(errorHandler.getErrorStats().byCode);
+                                    }
+
+                                    const mappedActivities = result.activities as ActivityWithNullableImage[];
+                                    console.log("🔍 Deepsearch successfully mapped activities:", mappedActivities.length);
+                                    
+                                    setActivities(mappedActivities);
+                                    setIsLoading(false);
+                                    eventSource.close();
+                                    console.log("🔍 Deepsearch EventSource connection closed.");
+                                    
+                                    toast({
+                                        variant: "default",
+                                        title: "Deepsearch abgeschlossen",
+                                        description: `${mappedActivities.length} Aktivitäten gefunden`
+                                    });
+                                } else if (parsedResult.status === 'failed' || parsedResult.status === 'FAILED' || parsedResult.status === 'error') {
+                                    toast({ 
+                                        variant: "destructive", 
+                                        title: "Deepsearch fehlgeschlagen", 
+                                        description: parsedResult.message || "Die Deepsearch ist fehlgeschlagen." 
+                                    });
+                                    setIsLoading(false);
+                                    eventSource.close();
+                                }
+                            } catch (innerParseError) {
+                                console.error("🔍 Fehler beim Parsen des Deepsearch result-Strings:", innerParseError);
+                            }
+                        } else {
+                            console.error("🔍 Unerwartetes Deepsearch Datenformat");
+                        }
+                    } catch (parseError) {
+                        console.error("🔍 Fehler beim Parsen der Deepsearch SSE-Nachricht:", parseError);
+                    }
+                };
+
+                eventSource.onerror = (error) => {
+                    console.error("🔍 Deepsearch SSE Verbindungsfehler:", error);
+                    toast({ 
+                        variant: "destructive", 
+                        title: "Deepsearch Verbindungsfehler", 
+                        description: "Die Verbindung zum Server wurde unterbrochen." 
+                    });
+                    setIsLoading(false);
+                    eventSource.close();
+                };
+
+            } catch (error) {
+                console.error("🔍 Deepsearch Fehler:", error);
+                toast({ 
+                    variant: "destructive", 
+                    title: "Deepsearch Fehler", 
+                    description: "Die Verbindung zum Server konnte nicht hergestellt werden." 
+                });
+                setIsLoading(false);
+            }
+        });
+    };
+
+    // Fallback-Suche wenn nichts ausgewählt ist
+    const performDefaultSearch = (query: string) => {
+        console.log("ℹ️ Standard-Suche gestartet (kein Modus ausgewählt) für:", query);
+        
+        // Zeige einen Toast, dass der Benutzer einen Modus auswählen soll
+        toast({
+            variant: "destructive",
+            title: "Suchmodus nicht ausgewählt",
+            description: "Bitte wählen Sie zwischen Fastsearch und Deepsearch aus.",
+            duration: 5000
+        });
+
+        // Optional: Automatisch auf Fastsearch fallen lassen
+        // console.log("ℹ️ Fallback auf Fastsearch...");
+        // setSearchMode('fastsearch');
+        // performFastSearch(query);
     };
 
     const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -422,10 +584,42 @@ export default function Home() {
 
     const handleSearch = (e: React.FormEvent) => {
         e.preventDefault();
-        performSearch(searchQuery);
+        
+        if (!searchQuery.trim()) {
+            toast({
+                variant: "destructive",
+                title: "Suchfeld leer",
+                description: "Bitte geben Sie eine Adresse ein.",
+            });
+            return;
+        }
+
+        // Entscheide welche Suchfunktion aufgerufen wird basierend auf searchMode
+        switch (searchMode) {
+            case 'fastsearch':
+                performFastSearch(searchQuery);
+                break;
+            case 'deepsearch':
+                performDeepSearch(searchQuery);
+                break;
+            case 'none':
+            default:
+                performDefaultSearch(searchQuery);
+                break;
+        }
     };
 
     const showLoader = isSearching || isLoading;
+
+    // Funktion um Suchmodus anzuzeigen
+    const getSearchModeDisplayName = (mode: SearchMode): string => {
+        switch (mode) {
+            case 'fastsearch': return 'Schnellsuche';
+            case 'deepsearch': return 'Tiefensuche';
+            case 'none': return 'Kein Modus ausgewählt';
+            default: return 'Unbekannt';
+        }
+    };
 
     return (
         <div className="h-screen w-screen flex flex-col bg-background text-foreground overflow-hidden">
@@ -437,12 +631,22 @@ export default function Home() {
                                 <h1 className="text-2xl font-bold font-headline text-primary mr-4 whitespace-nowrap">GÖSA Reisen</h1>
                                 <div className="w-full relative">
                                     <form onSubmit={handleSearch} className="flex gap-2 w-full">
+                                        <Select value={searchMode} onValueChange={(value: SearchMode) => setSearchMode(value)}>
+                                            <SelectTrigger className="w-[160px]">
+                                                <SelectValue placeholder="Suchmodus wählen" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="fastsearch">🚀 Fastsearch</SelectItem>
+                                                <SelectItem value="deepsearch">🔍 Deepsearch</SelectItem>
+                                            </SelectContent>
+                                        </Select>
                                         <Input
                                             placeholder="Adresse eingeben..."
                                             value={searchQuery}
                                             onChange={handleInputChange}
                                             aria-label="Address-Suche"
                                             autoComplete="off"
+                                            className="flex-1"
                                         />
                                         <Button type="submit" disabled={showLoader || !searchQuery} aria-label="Search" className="px-5">
                                             {showLoader ? <Loader2 className="animate-spin h-5 w-5"/> : <Search className="h-6 w-6" />}
@@ -450,6 +654,11 @@ export default function Home() {
                                     </form>
                                 </div>
                             </div>
+                            {searchMode === 'none' && (
+                                <p className="text-sm text-amber-600 mt-2 text-center">
+                                    ⚠️ Bitte wählen Sie einen Suchmodus aus
+                                </p>
+                            )}
                         </CardContent>
                     </Card>
                 </div>
@@ -464,13 +673,35 @@ export default function Home() {
                     <aside className="absolute top-24 right-4 w-[360px] z-10">
                         <Card className="bg-card/30 shadow-lg backdrop-blur-sm max-h-[calc(100vh-7rem)] overflow-y-auto">
                             <CardHeader>
-                                <CardTitle>{showLoader ? "Suche..." : (activities.length > 0 ? `Top-Aktivitäten in ${searchQuery}` : "Dein Urlaubsziel:")}</CardTitle>
+                                <CardTitle>
+                                    {showLoader 
+                                        ? `Suche... (${getSearchModeDisplayName(searchMode)})` 
+                                        : (activities.length > 0 
+                                            ? `Aktivitäten in ${searchQuery}`
+                                            : "Dein Urlaubsziel:"
+                                          )
+                                    }
+                                </CardTitle>
+                                {activities.length > 0 && (
+                                    <p className="text-sm text-muted-foreground">
+                                        Modus: {getSearchModeDisplayName(searchMode)} • {activities.length} Ergebnisse
+                                    </p>
+                                )}
                             </CardHeader>
                             <CardContent>
                                 {showLoader ? (
                                     <div className="flex items-center justify-center p-8 gap-2">
                                         <Loader2 className="animate-spin h-8 w-8 text-primary" />
-                                        <span className="text-lg">Suche läuft...</span>
+                                        <div className="text-center">
+                                            <span className="text-lg block">
+                                                {searchMode === 'fastsearch' && '🚀 Schnellsuche läuft...'}
+                                                {searchMode === 'deepsearch' && '🔍 Tiefensuche läuft...'}
+                                                {searchMode === 'none' && 'Suche wird vorbereitet...'}
+                                            </span>
+                                            <span className="text-sm text-muted-foreground block mt-1">
+                                                {searchMode === 'deepsearch' && 'Dies kann etwas länger dauern...'}
+                                            </span>
+                                        </div>
                                     </div>
                                 ) : (
                                     <>
@@ -479,12 +710,17 @@ export default function Home() {
                                                 {activities.map((activity, index) => (
                                                     <ActivityCard 
                                                         key={index} 
-                                                        activity={activity as Activity} // Type assertion für Kompatibilität
+                                                        activity={activity as Activity}
                                                     />
                                                 ))}
                                             </div>
                                         ) : (
-                                            <p className="p-4">{searchedAddress}</p>
+                                            <div className="p-4">
+                                                <p className="mb-2">{searchedAddress}</p>
+                                                <p className="text-sm text-muted-foreground">
+                                                    Suchmodus: {getSearchModeDisplayName(searchMode)}
+                                                </p>
+                                            </div>
                                         )}
                                     </>
                                 )}
