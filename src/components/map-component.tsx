@@ -1,10 +1,8 @@
 "use client";
 
 import { useEffect, useRef } from 'react';
-import type { Map as LeafletMap, LayerGroup } from 'leaflet';
+import type { Map as LeafletMap, LayerGroup, Marker } from 'leaflet';
 
-// Wir definieren die Interfaces hier erneut oder importieren sie aus page.tsx
-// Damit es standalone funktioniert, habe ich sie hier kurz definiert:
 interface MapComponentProps {
   position: [number, number];
   zoom: number;
@@ -13,21 +11,24 @@ interface MapComponentProps {
     type: 'location' | 'activity';
     address?: string;
     activity?: any;
-    id?: string;
+    id?: string; // ID ist jetzt essenziell für das Mapping
   }>;
+  activeMarkerId?: string | null; // Neue Prop für den Hover-Status
 }
 
 declare const L: any;
 
-export default function MapComponent({ position, zoom, markers }: MapComponentProps) {
+export default function MapComponent({ position, zoom, markers, activeMarkerId }: MapComponentProps) {
   const mapRef = useRef<LeafletMap | null>(null);
   const markersLayerRef = useRef<LayerGroup | null>(null);
   const mapContainerRef = useRef<HTMLDivElement>(null);
+  
+  // Speichert Referenzen zu den einzelnen Markern für schnellen Zugriff per ID
+  const markersMapRef = useRef<{ [key: string]: Marker }>({});
 
   // 1. Karte Initialisieren
   useEffect(() => {
     if (typeof window !== 'undefined' && mapContainerRef.current && !mapRef.current) {
-      // Karte erstellen
       const map = L.map(mapContainerRef.current, { 
         attributionControl: false, 
         zoomControl: false 
@@ -35,18 +36,16 @@ export default function MapComponent({ position, zoom, markers }: MapComponentPr
 
       mapRef.current = map;
 
-      // Kacheln laden (CartoDB wie in deinem Snippet)
       L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager_labels_under/{z}/{x}/{y}{r}.png', {
         attribution: '&copy; OpenStreetMap, &copy; CARTO'
       }).addTo(map);
 
-      // LayerGroup für Marker erstellen (Wichtig für sauberes Löschen)
       const layerGroup = L.layerGroup().addTo(map);
       markersLayerRef.current = layerGroup;
     }
-  }, []); // Leeres Array -> Nur beim Mounten
+  }, []);
 
-  // 2. View Update (Wenn sich Center ändert)
+  // 2. View Update
   useEffect(() => {
     if (mapRef.current) {
       mapRef.current.setView(position, zoom, {
@@ -56,7 +55,7 @@ export default function MapComponent({ position, zoom, markers }: MapComponentPr
     }
   }, [position, zoom]);
 
-  // 3. Marker Logic (Das Herzstück)
+  // 3. Marker Logic (Erstellung & Mapping)
   useEffect(() => {
     const map = mapRef.current;
     const layerGroup = markersLayerRef.current;
@@ -64,6 +63,7 @@ export default function MapComponent({ position, zoom, markers }: MapComponentPr
     if (map && layerGroup && L) {
       // A. Alte Marker löschen
       layerGroup.clearLayers();
+      markersMapRef.current = {}; // Referenz-Map leeren
 
       // B. Icons definieren
       const DefaultIcon = L.icon({
@@ -82,9 +82,8 @@ export default function MapComponent({ position, zoom, markers }: MapComponentPr
         popupAnchor: [1, -34]
       });
 
-      // C. Neue Marker iterieren und hinzufügen
+      // C. Neue Marker erstellen
       markers.forEach((markerData) => {
-        // Popup HTML String bauen (Native Leaflet braucht HTML Strings, kein JSX)
         let popupContent = '';
         
         if (markerData.type === 'location') {
@@ -110,19 +109,42 @@ export default function MapComponent({ position, zoom, markers }: MapComponentPr
           `;
         }
 
-        // Marker erstellen
         const marker = L.marker(markerData.position, {
           icon: markerData.type === 'location' ? LocationIcon : DefaultIcon
         });
 
-        // Popup binden
         marker.bindPopup(popupContent);
-
-        // Zur LayerGroup hinzufügen
         marker.addTo(layerGroup);
+
+        // WICHTIG: Marker in die Referenz-Map speichern, wenn ID vorhanden
+        if (markerData.id) {
+          markersMapRef.current[markerData.id] = marker;
+        }
       });
     }
-  }, [markers]); // Führt diesen Block aus, wenn sich das markers-Array ändert
+  }, [markers]);
+
+  // 4. Active Marker Logic (Reaktion auf Hover)
+  useEffect(() => {
+    // Reset Z-Index aller Marker (optional, aber sauberer)
+    Object.values(markersMapRef.current).forEach((m: any) => {
+        m.setZIndexOffset(0); 
+        // Optional: m.closePopup(); wenn man will, dass nur einer offen ist
+    });
+
+    if (activeMarkerId && markersMapRef.current[activeMarkerId]) {
+      const marker = markersMapRef.current[activeMarkerId];
+      
+      // Marker in den Vordergrund holen
+      marker.setZIndexOffset(1000);
+      
+      // Popup öffnen
+      marker.openPopup();
+    } else {
+      // Wenn kein Marker aktiv ist (Maus verlässt Karte), schließen wir alle Popups
+      // mapRef.current?.closePopup(); // Einkommentieren, wenn Popups beim Verlassen schließen sollen
+    }
+  }, [activeMarkerId]);
 
   return (
     <div 

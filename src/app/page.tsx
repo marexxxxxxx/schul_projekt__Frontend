@@ -33,7 +33,7 @@ export interface ActivityMarker {
   position: [number, number];
   activity: ActivityWithNullableImage;
   type: 'activity';
-  id: string; // Eindeutige ID für Keys
+  id: string; // Wichtig für das Mapping
 }
 
 export interface LocationMarker {
@@ -87,7 +87,6 @@ class ActivityParser {
         image_url: this.safeGetImageUrl(act),
       };
 
-      // Robuste Koordinaten-Extraktion
       activity.coordinates = this.extractCoordinates(act);
       activity.meeting_point = this.extractMeetingPoint(act);
 
@@ -100,7 +99,6 @@ class ActivityParser {
   private parseCoordValue(val: any): number {
     if (typeof val === 'number') return val;
     if (typeof val === 'string') {
-      // Ersetze Komma durch Punkt für europäische Formate
       const parsed = parseFloat(val.replace(',', '.'));
       return isNaN(parsed) ? 0 : parsed;
     }
@@ -108,25 +106,20 @@ class ActivityParser {
   }
 
   private extractCoordinates(act: any): { lat: number; lon: number } | undefined {
-    // Strategie 1: Direktes Objekt (coordinates: { lat: ..., lon: ... })
     if (act.coordinates && typeof act.coordinates === 'object') {
       const lat = this.parseCoordValue(act.coordinates.lat || act.coordinates.latitude);
       const lon = this.parseCoordValue(act.coordinates.lon || act.coordinates.lng || act.coordinates.longitude);
       if (lat !== 0 && lon !== 0) return { lat, lon };
     }
-
-    // Strategie 2: Flache Struktur im Root-Objekt
     const flatLat = this.parseCoordValue(act.latitude || act.lat);
     const flatLon = this.parseCoordValue(act.longitude || act.lon || act.lng);
     if (flatLat !== 0 && flatLon !== 0) return { lat: flatLat, lon: flatLon };
 
-    // Strategie 3: Meeting Point Array als Fallback
     if (Array.isArray(act.meeting_point) && act.meeting_point.length >= 2) {
       const lat = this.parseCoordValue(act.meeting_point[0]);
       const lon = this.parseCoordValue(act.meeting_point[1]);
       if (lat !== 0 && lon !== 0) return { lat, lon };
     }
-
     return undefined;
   }
 
@@ -144,7 +137,7 @@ class ActivityParser {
     return def;
   }
   private safeGetNumber(obj: any, key: string, def: number): number {
-    const val = this.parseCoordValue(obj[key]); // Wiederverwendung des robusten Parsers
+    const val = this.parseCoordValue(obj[key]); 
     return val === 0 ? def : val;
   }
   private safeGetImageUrl(obj: any): string | null {
@@ -157,7 +150,6 @@ class ActivityParser {
 
 // --- Components ---
 
-// Deaktiviert SSR für Leaflet, da window undefined ist
 const Map = dynamic(() => import('@/components/map-component'), {
     ssr: false,
     loading: () => <div className="h-full w-full bg-muted rounded-lg flex items-center justify-center text-muted-foreground">
@@ -171,19 +163,20 @@ export default function Home() {
     const [searchedAddress, setSearchedAddress] = useState<string | undefined>(undefined);
     const [activities, setActivities] = useState<ActivityWithNullableImage[]>([]);
     const [markers, setMarkers] = useState<MapMarker[]>([]);
+    
+    // NEU: State für Hover-Interaktion
+    const [hoveredMarkerId, setHoveredMarkerId] = useState<string | null>(null);
+
     const [isLoading, setIsLoading] = useState(false);
     const [isSearching, startSearchTransition] = useTransition();
     const { toast } = useToast();
-    
-    // Referenz für SSE, um sauberen Abbruch zu garantieren
     const eventSourceRef = useRef<EventSource | null>(null);
 
     const [mapPosition, setMapPosition] = useState<MapPosition>({
-      center: [51.1657, 10.4515], // Deutschland Mitte
+      center: [51.1657, 10.4515],
       zoom: 6
     });
 
-    // Initialer Marker
     useEffect(() => {
       const germanyMarker: LocationMarker = {
         position: [51.1657, 10.4515],
@@ -194,7 +187,6 @@ export default function Home() {
       setMarkers([germanyMarker]);
       setSearchedAddress('Deutschland');
 
-      // Cleanup function für EventSource
       return () => {
         if (eventSourceRef.current) eventSourceRef.current.close();
       };
@@ -204,16 +196,13 @@ export default function Home() {
       setMapPosition({ center: [lat, lon], zoom });
     }, []);
 
-    // Geocoding Logic
     const performGeocoding = async (query: string): Promise<{lat: number, lon: number, address: string} | null> => {
       try {
         const geoResponse = await fetch(
           `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=1&addressdetails=1`,
           { headers: { 'User-Agent': 'GOSA-Reisen/1.0' } }
         );
-        
         if (!geoResponse.ok) throw new Error('Geocoding Error');
-
         const geoData = await geoResponse.json();
         if (geoData && geoData.length > 0) {
           return {
@@ -229,21 +218,15 @@ export default function Home() {
       }
     };
 
-    // Main Search Logic
     const performSearch = async (query: string, mode: SearchMode) => {
-      // Reset
-      if (eventSourceRef.current) {
-        eventSourceRef.current.close();
-      }
-      
+      if (eventSourceRef.current) eventSourceRef.current.close();
       setActivities([]);
       setSearchedAddress(undefined);
+      setHoveredMarkerId(null); // Reset Hover
       setIsLoading(true);
 
       try {
-        // 1. Geocoding
         const geocodingResult = await performGeocoding(query);
-        
         if (!geocodingResult) {
           toast({ variant: "destructive", title: "Nicht gefunden", description: "Adresse konnte nicht lokalisiert werden." });
           setIsLoading(false);
@@ -251,8 +234,6 @@ export default function Home() {
         }
 
         const { lat, lon, address } = geocodingResult;
-
-        // Map zentrieren
         updateMapPosition(lat, lon, 13);
         
         const locationMarker: LocationMarker = {
@@ -262,47 +243,37 @@ export default function Home() {
           id: `loc-${lat}-${lon}`
         };
         
-        // Marker State komplett überschreiben mit neuem Standort
         setMarkers([locationMarker]);
         setSearchedAddress(address);
 
-        // 2. Backend Request
         const endpoint = mode === 'fastsearch' ? `location/${encodeURIComponent(query)}` : `create_data/${encodeURIComponent(query)}`;
         const searchResponse = await fetch(`http://127.0.0.1:8000/${endpoint}?search_mode=${mode}`, { method: 'GET' });
         
         if (!searchResponse.ok) throw new Error('Backend Connection Error');
-
         const { job_id } = await searchResponse.json();
         
-        // 3. SSE Setup
         const eventSource = new EventSource(`http://127.0.0.1:8000/stream/${job_id}`);
         eventSourceRef.current = eventSource;
 
         eventSource.onmessage = (event) => {
           try {
             const data = JSON.parse(event.data);
-            
             if (data.result && typeof data.result === 'string') {
               const parsedResult = JSON.parse(data.result);
-              
               if (parsedResult.status === 'completed' && Array.isArray(parsedResult.result)) {
-                console.log("📥 Daten empfangen. Verarbeite...");
-
                 const parser = new ActivityParser();
                 const { activities: mappedActivities } = parser.parseActivities(parsedResult);
                 
                 setActivities(mappedActivities as ActivityWithNullableImage[]);
                 
-                // Marker generieren
                 const newActivityMarkers: ActivityMarker[] = mappedActivities
                   .map((act, index) => {
                     let pos: [number, number] | undefined = undefined;
-                    
                     if (act.coordinates?.lat && act.coordinates?.lon) {
                       pos = [act.coordinates.lat, act.coordinates.lon];
                     } 
-                    
                     if (pos) {
+                      // Konsistente ID-Generierung
                       return {
                         position: pos,
                         activity: act as ActivityWithNullableImage,
@@ -314,25 +285,16 @@ export default function Home() {
                   })
                   .filter((m): m is ActivityMarker => m !== null);
 
-                console.log(`📍 ${newActivityMarkers.length} neue Marker erstellt.`);
-
-                // WICHTIG: Marker mergen (Location behalten + neue Activities)
                 setMarkers(prev => {
                   const currentLocMarker = prev.find(m => m.type === 'location');
-                  // Wenn kein Location Marker im State ist, nehmen wir den aus dem Scope (Fallback)
                   return [currentLocMarker || locationMarker, ...newActivityMarkers];
                 });
 
-                toast({ 
-                  title: "Suche erfolgreich", 
-                  description: `${mappedActivities.length} Ergebnisse gefunden.` 
-                });
-
+                toast({ title: "Suche erfolgreich", description: `${mappedActivities.length} Ergebnisse gefunden.` });
                 setIsLoading(false);
                 eventSource.close();
-                
               } else if (parsedResult.status === 'failed') {
-                throw new Error(parsedResult.message || "Unbekannter Fehler im Backend");
+                throw new Error(parsedResult.message || "Backend Error");
               }
             }
           } catch (e) {
@@ -341,14 +303,11 @@ export default function Home() {
         };
 
         eventSource.onerror = () => {
-          // Nur schließen, wenn nicht absichtlich beendet
           if (eventSource.readyState !== EventSource.CLOSED) {
-             console.error("SSE Connection Lost");
              setIsLoading(false);
              eventSource.close();
           }
         };
-
       } catch (error) {
         console.error(error);
         toast({ variant: "destructive", title: "Fehler", description: "Verbindung fehlgeschlagen." });
@@ -366,7 +325,7 @@ export default function Home() {
     return (
         <div className="h-screen w-screen flex flex-col bg-background text-foreground overflow-hidden">
             <main className="flex-1 h-full relative">
-                {/* Suchleiste Overlay */}
+                {/* Suchleiste */}
                 <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[1000] w-full max-w-xl px-4">
                     <Card className="bg-background/90 shadow-xl backdrop-blur-md border-primary/20">
                         <CardContent className="p-4">
@@ -395,18 +354,19 @@ export default function Home() {
                     </Card>
                 </div>
 
-                {/* Map Container */}
+                {/* Map Container mit Prop für aktive Marker */}
                 <div className="absolute inset-0 z-0">
-                   {/* Der Key erzwingt Re-Mount bei signifikanter Änderung, um Marker-Probleme zu fixen */}
                    <Map
                         key={`map-${mapPosition.center[0]}-${mapPosition.center[1]}-${markers.length}`}
                         position={mapPosition.center}
                         zoom={mapPosition.zoom}
                         markers={markers}
+                        // @ts-ignore - Map Component muss diese Prop in seinen Types aufnehmen
+                        activeMarkerId={hoveredMarkerId} 
                     />
                 </div>
 
-                {/* Sidebar Results */}
+                {/* Sidebar Results mit Hover Logik */}
                 {(searchedAddress || activities.length > 0 || isLoading) && (
                     <aside className="absolute top-24 right-4 w-[360px] z-[999] max-w-[calc(100vw-2rem)]">
                         <Card className="bg-background/95 shadow-xl backdrop-blur-md border-muted max-h-[calc(100vh-8rem)] flex flex-col">
@@ -428,7 +388,26 @@ export default function Home() {
                                 ) : (
                                     activities.length > 0 ? (
                                         <div className="grid gap-4 pt-2">
-                                            {activities.map((act, i) => <ActivityCard key={i} activity={act as Activity} />)}
+                                            {activities.map((act, i) => {
+                                                // ID Rekonstruktion passend zur Marker-Generierung
+                                                let markerId: string | null = null;
+                                                if (act.coordinates?.lat && act.coordinates?.lon) {
+                                                    markerId = `act-${i}-${act.coordinates.lat}-${act.coordinates.lon}`;
+                                                }
+
+                                                return (
+                                                    <div 
+                                                        key={i}
+                                                        onMouseEnter={() => markerId && setHoveredMarkerId(markerId)}
+                                                        onMouseLeave={() => setHoveredMarkerId(null)}
+                                                        className={`transition-all duration-200 rounded-lg ${
+                                                            hoveredMarkerId === markerId ? 'ring-2 ring-primary bg-primary/5' : ''
+                                                        }`}
+                                                    >
+                                                        <ActivityCard activity={act as Activity} />
+                                                    </div>
+                                                );
+                                            })}
                                         </div>
                                     ) : (
                                         <div className="py-8 text-center text-muted-foreground">
