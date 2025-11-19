@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useTransition } from 'react';
+import { useState, useTransition, useEffect, useCallback, useRef } from 'react';
 import dynamic from 'next/dynamic';
-import { Search, Loader2 } from 'lucide-react';
+import { Search, Loader2, MapPin } from 'lucide-react';
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,711 +18,424 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
-// Error Handler Klassen
-interface ActivityMappingError extends Error {
-  code: string;
-  field?: string;
-  value?: any;
-  index?: number;
+// --- Typen & Interfaces ---
+
+export interface ActivityWithCoordinates extends Activity {
+  coordinates?: { lat: number; lon: number };
+  meeting_point?: [number, number];
 }
 
-class ActivityErrorHandler {
-  private errors: ActivityMappingError[] = [];
+export interface ActivityWithNullableImage extends Omit<ActivityWithCoordinates, 'image_url'> {
+  image_url: string | null;
+}
 
-  public mapActivities(data: any): { activities: Activity[]; errors: ActivityMappingError[]; hasErrors: boolean } {
-    this.errors = [];
+export interface ActivityMarker {
+  position: [number, number];
+  activity: ActivityWithNullableImage;
+  type: 'activity';
+  id: string; // Eindeutige ID für Keys
+}
 
+export interface LocationMarker {
+  position: [number, number];
+  type: 'location';
+  address: string;
+  id: string;
+}
+
+export type MapMarker = ActivityMarker | LocationMarker;
+type SearchMode = 'fastsearch' | 'deepsearch';
+
+interface MapPosition {
+  center: [number, number];
+  zoom: number;
+}
+
+// --- Error Handler & Parser Class ---
+
+class ActivityParser {
+  public parseActivities(data: any): { activities: ActivityWithCoordinates[]; hasErrors: boolean } {
     try {
-      this.validateDataStructure(data);
-      if (this.errors.length > 0) {
-        return { activities: [], errors: this.errors, hasErrors: true };
+      if (!data || !data.result || !Array.isArray(data.result)) {
+        return { activities: [], hasErrors: true };
       }
 
-      const mappedActivities: Activity[] = data.result.map((act: any, index: number) => 
-        this.mapSingleActivity(act, index)
-      ).filter((act: Activity | null): act is Activity => act !== null);
+      const mappedActivities = data.result
+        .map((act: any) => this.mapSingleActivity(act))
+        .filter((act: ActivityWithCoordinates | null): act is ActivityWithCoordinates => act !== null);
 
-      return {
-        activities: mappedActivities,
-        errors: this.errors,
-        hasErrors: this.errors.length > 0
-      };
-
+      return { activities: mappedActivities, hasErrors: false };
     } catch (error) {
-      this.handleCriticalError(error as Error);
-      return { activities: [], errors: this.errors, hasErrors: true };
+      console.error("Parsing Error:", error);
+      return { activities: [], hasErrors: true };
     }
   }
 
-  private validateDataStructure(data: any): void {
-    if (!data) {
-      this.logError('NO_DATA', 'Keine Daten erhalten');
-      return;
-    }
-
-    if (data.status !== 'completed') {
-      this.logError('INVALID_STATUS', `Unerwarteter Status: ${data.status}`, undefined, data.status);
-    }
-
-    if (!Array.isArray(data.result)) {
-      this.logError('INVALID_RESULT_TYPE', 'Result ist kein Array', undefined, data.result);
-    }
-  }
-
-  private mapSingleActivity(act: any, index: number): Activity | null {
+  private mapSingleActivity(act: any): ActivityWithCoordinates | null {
     try {
-      if (!act || typeof act !== 'object') {
-        this.logError('INVALID_ACTIVITY_OBJECT', `Ungültiges Aktivitätsobjekt bei Index ${index}`, undefined, act);
-        return null;
-      }
+      if (!act || typeof act !== 'object') return null;
 
-      const validationErrors = this.validateActivityFields(act, index);
-      if (validationErrors.length > 0) {
-        return null;
-      }
-
-      return {
-        title: this.safeGetString(act, ['name', 'title'], 'Unbenannte Aktivität', index),
-        rating_average: this.safeGetNumber(act, 'rating_average', 0, index),
-        rating_count: this.safeGetNumber(act, 'rating_count', 0, index),
-        price_value: this.safeGetNumber(act, 'price_value', 0, index),
-        price_currency: this.safeGetString(act, ['price_currency'], 'EUR', index),
-        price_unit: this.safeGetString(act, ['price_unit'], 'Person', index),
-        duration_min_hours: this.safeGetNumber(act, 'duration_min_hours', 0, index),
-        activity_url: this.safeGetString(act, ['activity_url', 'url'], '#', index),
-        // Verwende eine spezielle Methode für Bild-URLs mit besserer Validierung
-        image_url: this.safeGetImageUrl(act, index),
+      const activity: ActivityWithCoordinates = {
+        title: this.safeGetString(act, ['name', 'title'], 'Unbenannte Aktivität'),
+        rating_average: this.safeGetNumber(act, 'rating_average', 0),
+        rating_count: this.safeGetNumber(act, 'rating_count', 0),
+        price_value: this.safeGetNumber(act, 'price_value', 0),
+        price_currency: this.safeGetString(act, ['price_currency'], 'EUR'),
+        price_unit: this.safeGetString(act, ['price_unit'], 'Person'),
+        duration_min_hours: this.safeGetNumber(act, 'duration_min_hours', 0),
+        activity_url: this.safeGetString(act, ['activity_url', 'url'], '#'),
+        image_url: this.safeGetImageUrl(act),
       };
 
+      // Robuste Koordinaten-Extraktion
+      activity.coordinates = this.extractCoordinates(act);
+      activity.meeting_point = this.extractMeetingPoint(act);
+
+      return activity;
     } catch (error) {
-      this.logError(
-        'MAPPING_ERROR',
-        `Fehler beim Mappen der Aktivität bei Index ${index}`,
-        undefined,
-        act,
-        index,
-        error as Error
-      );
       return null;
     }
   }
 
-  /**
-   * Spezielle Methode für Bild-URLs mit erweiterter Validierung
-   */
-  private safeGetImageUrl(obj: any, index: number): string | null {
-    const keys = ['image_url'];
-    for (const key of keys) {
-      const value = obj[key];
-      if (value !== undefined && value !== null && value !== '') {
-        if (typeof value === 'string') {
-          const trimmed = value.trim();
-          // Erweiterte Validierung für Bild-URLs
-          if (this.isValidImageUrl(trimmed)) {
-            return trimmed;
-          } else {
-            this.logError('INVALID_IMAGE_URL', `Ungültige Bild-URL: ${trimmed}`, key, trimmed, index);
-            return null;
-          }
-        }
-        // Fallback: Konvertierung zu String und Validierung
-        const strValue = String(value).trim();
-        if (this.isValidImageUrl(strValue)) {
-          return strValue;
-        } else {
-          this.logError('INVALID_IMAGE_URL', `Ungültige Bild-URL: ${strValue}`, key, strValue, index);
-          return null;
-        }
-      }
+  private parseCoordValue(val: any): number {
+    if (typeof val === 'number') return val;
+    if (typeof val === 'string') {
+      // Ersetze Komma durch Punkt für europäische Formate
+      const parsed = parseFloat(val.replace(',', '.'));
+      return isNaN(parsed) ? 0 : parsed;
     }
-    return null; // Kein Bild statt leerem String
+    return 0;
   }
 
-  /**
-   * Erweiterte URL-Validierung für Bilder
-   */
-  private isValidImageUrl(url: string): boolean {
-    if (!url) return false;
-    
-    // Überprüfe auf bekannte ungültige Muster
-    if (url.includes('ranking_uuid=') || 
-        url.includes('tour_img/') && !url.includes('cdn.getyourguide.com')) {
-      return false;
+  private extractCoordinates(act: any): { lat: number; lon: number } | undefined {
+    // Strategie 1: Direktes Objekt (coordinates: { lat: ..., lon: ... })
+    if (act.coordinates && typeof act.coordinates === 'object') {
+      const lat = this.parseCoordValue(act.coordinates.lat || act.coordinates.latitude);
+      const lon = this.parseCoordValue(act.coordinates.lon || act.coordinates.lng || act.coordinates.longitude);
+      if (lat !== 0 && lon !== 0) return { lat, lon };
     }
 
-    // Überprüfe, ob die URL mit http:// oder https:// beginnt
-    if (!url.startsWith('http://') && !url.startsWith('https://')) {
-      return false;
+    // Strategie 2: Flache Struktur im Root-Objekt
+    const flatLat = this.parseCoordValue(act.latitude || act.lat);
+    const flatLon = this.parseCoordValue(act.longitude || act.lon || act.lng);
+    if (flatLat !== 0 && flatLon !== 0) return { lat: flatLat, lon: flatLon };
+
+    // Strategie 3: Meeting Point Array als Fallback
+    if (Array.isArray(act.meeting_point) && act.meeting_point.length >= 2) {
+      const lat = this.parseCoordValue(act.meeting_point[0]);
+      const lon = this.parseCoordValue(act.meeting_point[1]);
+      if (lat !== 0 && lon !== 0) return { lat, lon };
     }
 
-    try {
-      new URL(url);
-      return true;
-    } catch {
-      return false;
-    }
+    return undefined;
   }
 
-  private validateActivityFields(act: any, index: number): string[] {
-    const fieldErrors: string[] = [];
-
-    if (!this.hasAnyProperty(act, ['name', 'title'])) {
-      this.logError('MISSING_TITLE', 'Aktivität hat keinen Titel', 'title', undefined, index);
-      fieldErrors.push('title');
+  private extractMeetingPoint(act: any): [number, number] | undefined {
+    if (Array.isArray(act.meeting_point) && act.meeting_point.length >= 2) {
+       const lat = this.parseCoordValue(act.meeting_point[0]);
+       const lon = this.parseCoordValue(act.meeting_point[1]);
+       if (lat !== 0 && lon !== 0) return [lat, lon];
     }
-
-    const url = act.activity_url || act.url;
-    if (url && url !== '#' && !this.isValidUrl(url)) {
-      this.logError('INVALID_URL', `Ungültige URL: ${url}`, 'activity_url', url, index);
-      fieldErrors.push('activity_url');
-    }
-
-    if (act.rating_average !== undefined && (act.rating_average < 0 || act.rating_average > 5)) {
-      this.logError('INVALID_RATING', `Rating außerhalb des gültigen Bereichs: ${act.rating_average}`, 'rating_average', act.rating_average, index);
-    }
-
-    return fieldErrors;
+    return undefined;
   }
 
-  private safeGetString(obj: any, keys: string[], defaultValue: string, index: number): string {
-    for (const key of keys) {
-      const value = obj[key];
-      if (value !== undefined && value !== null && value !== '') {
-        if (typeof value === 'string') {
-          return value.trim() || defaultValue;
-        }
-        return String(value).trim() || defaultValue;
-      }
-    }
-    return defaultValue;
+  private safeGetString(obj: any, keys: string[], def: string): string {
+    for (const key of keys) if (obj[key]) return String(obj[key]).trim();
+    return def;
   }
-
-  private safeGetNumber(obj: any, key: string, defaultValue: number, index: number): number {
-    const value = obj[key];
-    
-    if (value === undefined || value === null) {
-      return defaultValue;
-    }
-
-    const num = Number(value);
-    if (isNaN(num)) {
-      this.logError('INVALID_NUMBER', `Ungültiger Zahlenwert für ${key}: ${value}`, key, value, index);
-      return defaultValue;
-    }
-
-    return num;
+  private safeGetNumber(obj: any, key: string, def: number): number {
+    const val = this.parseCoordValue(obj[key]); // Wiederverwendung des robusten Parsers
+    return val === 0 ? def : val;
   }
-
-  private hasAnyProperty(obj: any, keys: string[]): boolean {
-    return keys.some(key => obj[key] !== undefined && obj[key] !== null && obj[key] !== '');
-  }
-
-  private isValidUrl(url: string): boolean {
-    try {
-      new URL(url);
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
-  private logError(
-    code: string,
-    message: string,
-    field?: string,
-    value?: any,
-    index?: number,
-    originalError?: Error
-  ): void {
-    const error: ActivityMappingError = {
-      name: 'ActivityMappingError',
-      code,
-      message: originalError ? `${message} (Original: ${originalError.message})` : message,
-      field,
-      value,
-      index
-    };
-
-    this.errors.push(error);
-
-    const logMessage = `[${code}] ${message} ${field ? `Field: ${field}` : ''} ${index !== undefined ? `Index: ${index}` : ''}`;
-    
-    if (code.startsWith('INVALID_') || code === 'MAPPING_ERROR') {
-      console.warn('⚠️', logMessage, value || '');
-    } else {
-      console.error('❌', logMessage, originalError || '');
-    }
-  }
-
-  private handleCriticalError(error: Error): void {
-    this.logError('CRITICAL_ERROR', 'Kritischer Fehler beim Verarbeiten der Aktivitäten', undefined, undefined, undefined, error);
-  }
-
-  public getErrorStats(): { total: number; byCode: Record<string, number>; byField: Record<string, number> } {
-    const byCode: Record<string, number> = {};
-    const byField: Record<string, number> = {};
-
-    this.errors.forEach(error => {
-      byCode[error.code] = (byCode[error.code] || 0) + 1;
-      if (error.field) {
-        byField[error.field] = (byField[error.field] || 0) + 1;
-      }
-    });
-
-    return {
-      total: this.errors.length,
-      byCode,
-      byField
-    };
+  private safeGetImageUrl(obj: any): string | null {
+    const val = obj['image_url'];
+    if (!val || typeof val !== 'string') return null;
+    if (val.includes('ranking_uuid=') || (val.includes('tour_img/') && !val.includes('http'))) return null; 
+    return val;
   }
 }
 
+// --- Components ---
+
+// Deaktiviert SSR für Leaflet, da window undefined ist
 const Map = dynamic(() => import('@/components/map-component'), {
     ssr: false,
-    loading: () => <div className="h-full w-full bg-muted rounded-lg flex items-center justify-center">
-      <Loader2 className="h-8 w-8 animate-spin text-primary" />
+    loading: () => <div className="h-full w-full bg-muted rounded-lg flex items-center justify-center text-muted-foreground">
+      <Loader2 className="h-8 w-8 animate-spin mr-2" /> Karte wird geladen...
     </div>
 });
 
-// Aktualisiere den Activity Type um null für image_url zu erlauben
-interface ActivityWithNullableImage extends Omit<Activity, 'image_url'> {
-  image_url: string | null;
-}
-
-// Suchmodus Typ
-type SearchMode = 'fastsearch' | 'deepsearch' | 'none';
-
 export default function Home() {
     const [searchQuery, setSearchQuery] = useState('');
-    const [searchMode, setSearchMode] = useState<SearchMode>('none');
+    const [searchMode, setSearchMode] = useState<SearchMode>('fastsearch');
     const [searchedAddress, setSearchedAddress] = useState<string | undefined>(undefined);
     const [activities, setActivities] = useState<ActivityWithNullableImage[]>([]);
-    const [markerPosition, setMarkerPosition] = useState<[number, number] | undefined>(undefined);
+    const [markers, setMarkers] = useState<MapMarker[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     const [isSearching, startSearchTransition] = useTransition();
     const { toast } = useToast();
+    
+    // Referenz für SSE, um sauberen Abbruch zu garantieren
+    const eventSourceRef = useRef<EventSource | null>(null);
 
-    // Fastsearch Funktion
-    const performFastSearch = (query: string) => {
-        console.log("🚀 Fastsearch gestartet für:", query);
+    const [mapPosition, setMapPosition] = useState<MapPosition>({
+      center: [51.1657, 10.4515], // Deutschland Mitte
+      zoom: 6
+    });
+
+    // Initialer Marker
+    useEffect(() => {
+      const germanyMarker: LocationMarker = {
+        position: [51.1657, 10.4515],
+        type: 'location',
+        address: 'Deutschland',
+        id: 'init-germany'
+      };
+      setMarkers([germanyMarker]);
+      setSearchedAddress('Deutschland');
+
+      // Cleanup function für EventSource
+      return () => {
+        if (eventSourceRef.current) eventSourceRef.current.close();
+      };
+    }, []);
+
+    const updateMapPosition = useCallback((lat: number, lon: number, zoom: number = 13) => {
+      setMapPosition({ center: [lat, lon], zoom });
+    }, []);
+
+    // Geocoding Logic
+    const performGeocoding = async (query: string): Promise<{lat: number, lon: number, address: string} | null> => {
+      try {
+        const geoResponse = await fetch(
+          `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=1&addressdetails=1`,
+          { headers: { 'User-Agent': 'GOSA-Reisen/1.0' } }
+        );
         
-        startSearchTransition(async () => {
-            setActivities([]);
-            setSearchedAddress(undefined);
-            setMarkerPosition(undefined);
-            setIsLoading(true);
+        if (!geoResponse.ok) throw new Error('Geocoding Error');
 
-            // Geocoding Teil (gleich für beide Modi)
-            try {
-                const geoResponse = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=1&addressdetails=1`);
-                if (!geoResponse.ok) throw new Error('Fehler beim Abrufen vom Geocoding-Dienst.');
+        const geoData = await geoResponse.json();
+        if (geoData && geoData.length > 0) {
+          return {
+            lat: parseFloat(geoData[0].lat),
+            lon: parseFloat(geoData[0].lon),
+            address: geoData[0].display_name
+          };
+        }
+        return null;
+      } catch (error) {
+        console.error("🌍 Geocoding-Fehler:", error);
+        return null;
+      }
+    };
 
-                const geoData = await geoResponse.json();
-                if (geoData && geoData.length > 0) {
-                    const { lat, lon, display_name } = geoData[0];
-                    setMarkerPosition([parseFloat(lat), parseFloat(lon)]);
-                    setSearchedAddress(display_name);
-                } else {
-                    toast({ variant: "destructive", title: "Standort nicht gefunden", description: "Bitte versuchen Sie eine andere Adresse." });
-                    setIsLoading(false);
-                    return;
-                }
-            } catch (error) {
-                console.error(error);
-                toast({ variant: "destructive", title: "Fehler beim Geocoding", description: "Die Adresse konnte nicht gefunden werden." });
-                setIsLoading(false);
-                return;
-            }
+    // Main Search Logic
+    const performSearch = async (query: string, mode: SearchMode) => {
+      // Reset
+      if (eventSourceRef.current) {
+        eventSourceRef.current.close();
+      }
+      
+      setActivities([]);
+      setSearchedAddress(undefined);
+      setIsLoading(true);
 
-            // Fastsearch Backend-Suche
-            try {
-                const searchResponse = await fetch(`http://127.0.0.1:8000/location/${encodeURIComponent(query)}?search_mode=fastsearch`, {
-                    method: 'GET',
-                });
+      try {
+        // 1. Geocoding
+        const geocodingResult = await performGeocoding(query);
+        
+        if (!geocodingResult) {
+          toast({ variant: "destructive", title: "Nicht gefunden", description: "Adresse konnte nicht lokalisiert werden." });
+          setIsLoading(false);
+          return;
+        }
+
+        const { lat, lon, address } = geocodingResult;
+
+        // Map zentrieren
+        updateMapPosition(lat, lon, 13);
+        
+        const locationMarker: LocationMarker = {
+          position: [lat, lon],
+          type: 'location',
+          address: address,
+          id: `loc-${lat}-${lon}`
+        };
+        
+        // Marker State komplett überschreiben mit neuem Standort
+        setMarkers([locationMarker]);
+        setSearchedAddress(address);
+
+        // 2. Backend Request
+        const endpoint = mode === 'fastsearch' ? `location/${encodeURIComponent(query)}` : `create_data/${encodeURIComponent(query)}`;
+        const searchResponse = await fetch(`http://127.0.0.1:8000/${endpoint}?search_mode=${mode}`, { method: 'GET' });
+        
+        if (!searchResponse.ok) throw new Error('Backend Connection Error');
+
+        const { job_id } = await searchResponse.json();
+        
+        // 3. SSE Setup
+        const eventSource = new EventSource(`http://127.0.0.1:8000/stream/${job_id}`);
+        eventSourceRef.current = eventSource;
+
+        eventSource.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data);
+            
+            if (data.result && typeof data.result === 'string') {
+              const parsedResult = JSON.parse(data.result);
+              
+              if (parsedResult.status === 'completed' && Array.isArray(parsedResult.result)) {
+                console.log("📥 Daten empfangen. Verarbeite...");
+
+                const parser = new ActivityParser();
+                const { activities: mappedActivities } = parser.parseActivities(parsedResult);
                 
-                if (!searchResponse.ok) throw new Error('Fehler bei der Fastsearch-Anfrage an den Backend-Service.');
-
-                const { job_id } = await searchResponse.json();
-                const eventSource = new EventSource(`http://127.0.0.1:8000/stream/${job_id}`);
-
-                eventSource.onopen = () => {
-                    console.log("🚀 Fastsearch SSE connection established.");
-                };
-
-                eventSource.onmessage = (event) => {
-                    console.log("🚀 Fastsearch SSE message received:", event.data);
-                    
-                    try {
-                        const data = JSON.parse(event.data);
-                        console.log("🚀 Fastsearch parsed SSE data:", data);
-
-                        if (data.result && typeof data.result === 'string') {
-                            try {
-                                const parsedResult = JSON.parse(data.result);
-                                console.log("🚀 Fastsearch parsed result:", parsedResult);
-                                
-                                if (parsedResult.status === 'in progress') {
-                                    console.log("🚀 Fastsearch job is in progress.");
-                                    return;
-                                }
-
-                                if (parsedResult.status === 'completed' && Array.isArray(parsedResult.result)) {
-                                    const errorHandler = new ActivityErrorHandler();
-                                    const result = errorHandler.mapActivities(parsedResult);
-                                    
-                                    if (result.hasErrors) {
-                                        console.warn(`🚀 Fastsearch: Aktivitäten wurden mit ${result.errors.length} Fehlern verarbeitet:`);
-                                        console.table(errorHandler.getErrorStats().byCode);
-                                    }
-
-                                    const mappedActivities = result.activities as ActivityWithNullableImage[];
-                                    console.log("🚀 Fastsearch successfully mapped activities:", mappedActivities.length);
-                                    
-                                    setActivities(mappedActivities);
-                                    setIsLoading(false);
-                                    eventSource.close();
-                                    console.log("🚀 Fastsearch EventSource connection closed.");
-                                    
-                                    toast({
-                                        variant: "default",
-                                        title: "Fastsearch abgeschlossen",
-                                        description: `${mappedActivities.length} Aktivitäten gefunden`
-                                    });
-                                } else if (parsedResult.status === 'failed' || parsedResult.status === 'FAILED' || parsedResult.status === 'error') {
-                                    toast({ 
-                                        variant: "destructive", 
-                                        title: "Fastsearch fehlgeschlagen", 
-                                        description: parsedResult.message || "Die Fastsearch ist fehlgeschlagen." 
-                                    });
-                                    setIsLoading(false);
-                                    eventSource.close();
-                                }
-                            } catch (innerParseError) {
-                                console.error("🚀 Fehler beim Parsen des Fastsearch result-Strings:", innerParseError);
-                            }
-                        } else {
-                            console.error("🚀 Unerwartetes Fastsearch Datenformat");
-                        }
-                    } catch (parseError) {
-                        console.error("🚀 Fehler beim Parsen der Fastsearch SSE-Nachricht:", parseError);
-                    }
-                };
-
-                eventSource.onerror = (error) => {
-                    console.error("🚀 Fastsearch SSE Verbindungsfehler:", error);
-                    toast({ 
-                        variant: "destructive", 
-                        title: "Fastsearch Verbindungsfehler", 
-                        description: "Die Verbindung zum Server wurde unterbrochen." 
-                    });
-                    setIsLoading(false);
-                    eventSource.close();
-                };
-
-            } catch (error) {
-                console.error("🚀 Fastsearch Fehler:", error);
-                toast({ 
-                    variant: "destructive", 
-                    title: "Fastsearch Fehler", 
-                    description: "Die Verbindung zum Server konnte nicht hergestellt werden." 
-                });
-                setIsLoading(false);
-            }
-        });
-    };
-
-    // Deepsearch Funktion
-    const performDeepSearch = (query: string) => {
-        console.log("🔍 Deepsearch gestartet für:", query);
-        
-        startSearchTransition(async () => {
-            setActivities([]);
-            setSearchedAddress(undefined);
-            setMarkerPosition(undefined);
-            setIsLoading(true);
-
-            // Geocoding Teil (gleich für beide Modi)
-            try {
-                const geoResponse = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=1&addressdetails=1`);
-                if (!geoResponse.ok) throw new Error('Fehler beim Abrufen vom Geocoding-Dienst.');
-
-                const geoData = await geoResponse.json();
-                if (geoData && geoData.length > 0) {
-                    const { lat, lon, display_name } = geoData[0];
-                    setMarkerPosition([parseFloat(lat), parseFloat(lon)]);
-                    setSearchedAddress(display_name);
-                } else {
-                    toast({ variant: "destructive", title: "Standort nicht gefunden", description: "Bitte versuchen Sie eine andere Adresse." });
-                    setIsLoading(false);
-                    return;
-                }
-            } catch (error) {
-                console.error(error);
-                toast({ variant: "destructive", title: "Fehler beim Geocoding", description: "Die Adresse konnte nicht gefunden werden." });
-                setIsLoading(false);
-                return;
-            }
-
-            // Deepsearch Backend-Suche
-            try {
-                const searchResponse = await fetch(`http://127.0.0.1:8000/create_data/${encodeURIComponent(query)}?search_mode=deepsearch`, {
-                    method: 'GET',
-                });
+                setActivities(mappedActivities as ActivityWithNullableImage[]);
                 
-                if (!searchResponse.ok) throw new Error('Fehler bei der Deepsearch-Anfrage an den Backend-Service.');
-
-                const { job_id } = await searchResponse.json();
-                const eventSource = new EventSource(`http://127.0.0.1:8000/stream/${job_id}`);
-
-                eventSource.onopen = () => {
-                    console.log("🔍 Deepsearch SSE connection established.");
-                };
-
-                eventSource.onmessage = (event) => {
-                    console.log("🔍 Deepsearch SSE message received:", event.data);
+                // Marker generieren
+                const newActivityMarkers: ActivityMarker[] = mappedActivities
+                  .map((act, index) => {
+                    let pos: [number, number] | undefined = undefined;
                     
-                    try {
-                        const data = JSON.parse(event.data);
-                        console.log("🔍 Deepsearch parsed SSE data:", data);
-
-                        if (data.result && typeof data.result === 'string') {
-                            try {
-                                const parsedResult = JSON.parse(data.result);
-                                console.log("🔍 Deepsearch parsed result:", parsedResult);
-                                
-                                if (parsedResult.status === 'in progress') {
-                                    console.log("🔍 Deepsearch job is in progress.");
-                                    return;
-                                }
-
-                                if (parsedResult.status === 'completed' && Array.isArray(parsedResult.result)) {
-                                    const errorHandler = new ActivityErrorHandler();
-                                    const result = errorHandler.mapActivities(parsedResult);
-                                    
-                                    if (result.hasErrors) {
-                                        console.warn(`🔍 Deepsearch: Aktivitäten wurden mit ${result.errors.length} Fehlern verarbeitet:`);
-                                        console.table(errorHandler.getErrorStats().byCode);
-                                    }
-
-                                    const mappedActivities = result.activities as ActivityWithNullableImage[];
-                                    console.log("🔍 Deepsearch successfully mapped activities:", mappedActivities.length);
-                                    
-                                    setActivities(mappedActivities);
-                                    setIsLoading(false);
-                                    eventSource.close();
-                                    console.log("🔍 Deepsearch EventSource connection closed.");
-                                    
-                                    toast({
-                                        variant: "default",
-                                        title: "Deepsearch abgeschlossen",
-                                        description: `${mappedActivities.length} Aktivitäten gefunden`
-                                    });
-                                } else if (parsedResult.status === 'failed' || parsedResult.status === 'FAILED' || parsedResult.status === 'error') {
-                                    toast({ 
-                                        variant: "destructive", 
-                                        title: "Deepsearch fehlgeschlagen", 
-                                        description: parsedResult.message || "Die Deepsearch ist fehlgeschlagen." 
-                                    });
-                                    setIsLoading(false);
-                                    eventSource.close();
-                                }
-                            } catch (innerParseError) {
-                                console.error("🔍 Fehler beim Parsen des Deepsearch result-Strings:", innerParseError);
-                            }
-                        } else {
-                            console.error("🔍 Unerwartetes Deepsearch Datenformat");
-                        }
-                    } catch (parseError) {
-                        console.error("🔍 Fehler beim Parsen der Deepsearch SSE-Nachricht:", parseError);
+                    if (act.coordinates?.lat && act.coordinates?.lon) {
+                      pos = [act.coordinates.lat, act.coordinates.lon];
+                    } 
+                    
+                    if (pos) {
+                      return {
+                        position: pos,
+                        activity: act as ActivityWithNullableImage,
+                        type: 'activity',
+                        id: `act-${index}-${pos[0]}-${pos[1]}`
+                      } as ActivityMarker;
                     }
-                };
+                    return null;
+                  })
+                  .filter((m): m is ActivityMarker => m !== null);
 
-                eventSource.onerror = (error) => {
-                    console.error("🔍 Deepsearch SSE Verbindungsfehler:", error);
-                    toast({ 
-                        variant: "destructive", 
-                        title: "Deepsearch Verbindungsfehler", 
-                        description: "Die Verbindung zum Server wurde unterbrochen." 
-                    });
-                    setIsLoading(false);
-                    eventSource.close();
-                };
+                console.log(`📍 ${newActivityMarkers.length} neue Marker erstellt.`);
 
-            } catch (error) {
-                console.error("🔍 Deepsearch Fehler:", error);
-                toast({ 
-                    variant: "destructive", 
-                    title: "Deepsearch Fehler", 
-                    description: "Die Verbindung zum Server konnte nicht hergestellt werden." 
+                // WICHTIG: Marker mergen (Location behalten + neue Activities)
+                setMarkers(prev => {
+                  const currentLocMarker = prev.find(m => m.type === 'location');
+                  // Wenn kein Location Marker im State ist, nehmen wir den aus dem Scope (Fallback)
+                  return [currentLocMarker || locationMarker, ...newActivityMarkers];
                 });
+
+                toast({ 
+                  title: "Suche erfolgreich", 
+                  description: `${mappedActivities.length} Ergebnisse gefunden.` 
+                });
+
                 setIsLoading(false);
+                eventSource.close();
+                
+              } else if (parsedResult.status === 'failed') {
+                throw new Error(parsedResult.message || "Unbekannter Fehler im Backend");
+              }
             }
-        });
-    };
+          } catch (e) {
+            console.error("SSE Processing Error", e);
+          }
+        };
 
-    // Fallback-Suche wenn nichts ausgewählt ist
-    const performDefaultSearch = (query: string) => {
-        console.log("ℹ️ Standard-Suche gestartet (kein Modus ausgewählt) für:", query);
-        
-        // Zeige einen Toast, dass der Benutzer einen Modus auswählen soll
-        toast({
-            variant: "destructive",
-            title: "Suchmodus nicht ausgewählt",
-            description: "Bitte wählen Sie zwischen Fastsearch und Deepsearch aus.",
-            duration: 5000
-        });
+        eventSource.onerror = () => {
+          // Nur schließen, wenn nicht absichtlich beendet
+          if (eventSource.readyState !== EventSource.CLOSED) {
+             console.error("SSE Connection Lost");
+             setIsLoading(false);
+             eventSource.close();
+          }
+        };
 
-        // Optional: Automatisch auf Fastsearch fallen lassen
-        // console.log("ℹ️ Fallback auf Fastsearch...");
-        // setSearchMode('fastsearch');
-        // performFastSearch(query);
-    };
-
-    const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        setSearchQuery(e.target.value);
+      } catch (error) {
+        console.error(error);
+        toast({ variant: "destructive", title: "Fehler", description: "Verbindung fehlgeschlagen." });
+        setIsLoading(false);
+      }
     };
 
     const handleSearch = (e: React.FormEvent) => {
         e.preventDefault();
-        
-        if (!searchQuery.trim()) {
-            toast({
-                variant: "destructive",
-                title: "Suchfeld leer",
-                description: "Bitte geben Sie eine Adresse ein.",
-            });
-            return;
-        }
-
-        // Entscheide welche Suchfunktion aufgerufen wird basierend auf searchMode
-        switch (searchMode) {
-            case 'fastsearch':
-                performFastSearch(searchQuery);
-                break;
-            case 'deepsearch':
-                performDeepSearch(searchQuery);
-                break;
-            case 'none':
-            default:
-                performDefaultSearch(searchQuery);
-                break;
-        }
-    };
-
-    const showLoader = isSearching || isLoading;
-
-    // Funktion um Suchmodus anzuzeigen
-    const getSearchModeDisplayName = (mode: SearchMode): string => {
-        switch (mode) {
-            case 'fastsearch': return 'Schnellsuche';
-            case 'deepsearch': return 'Tiefensuche';
-            case 'none': return 'Kein Modus ausgewählt';
-            default: return 'Unbekannt';
-        }
+        if (!searchQuery.trim()) return;
+        const handler = performSearch(searchQuery, searchMode);
+        startSearchTransition(async () => { await handler; });
     };
 
     return (
         <div className="h-screen w-screen flex flex-col bg-background text-foreground overflow-hidden">
             <main className="flex-1 h-full relative">
-                <div className="absolute top-4 left-1/2 -translate-x-1/2 z-10 w-full max-w-xl">
-                    <Card className="bg-card/30 shadow-lg backdrop-blur-sm">
+                {/* Suchleiste Overlay */}
+                <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[1000] w-full max-w-xl px-4">
+                    <Card className="bg-background/90 shadow-xl backdrop-blur-md border-primary/20">
                         <CardContent className="p-4">
                             <div className="flex items-center justify-center gap-4">
-                                <h1 className="text-2xl font-bold font-headline text-primary mr-4 whitespace-nowrap">GÖSA Reisen</h1>
-                                <div className="w-full relative">
-                                    <form onSubmit={handleSearch} className="flex gap-2 w-full">
-                                        <Select value={searchMode} onValueChange={(value: SearchMode) => setSearchMode(value)}>
-                                            <SelectTrigger className="w-[160px]">
-                                                <SelectValue placeholder="Suchmodus wählen" />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                <SelectItem value="fastsearch">🚀 Fastsearch</SelectItem>
-                                                <SelectItem value="deepsearch">🔍 Deepsearch</SelectItem>
-                                            </SelectContent>
-                                        </Select>
-                                        <Input
-                                            placeholder="Adresse eingeben..."
-                                            value={searchQuery}
-                                            onChange={handleInputChange}
-                                            aria-label="Address-Suche"
-                                            autoComplete="off"
-                                            className="flex-1"
-                                        />
-                                        <Button type="submit" disabled={showLoader || !searchQuery} aria-label="Search" className="px-5">
-                                            {showLoader ? <Loader2 className="animate-spin h-5 w-5"/> : <Search className="h-6 w-6" />}
-                                        </Button>
-                                    </form>
-                                </div>
+                                <h1 className="text-xl font-bold text-primary hidden sm:block whitespace-nowrap">GÖSA</h1>
+                                <form onSubmit={handleSearch} className="flex gap-2 w-full">
+                                    <Select value={searchMode} onValueChange={(v: SearchMode) => setSearchMode(v)}>
+                                        <SelectTrigger className="w-[130px]"><SelectValue placeholder="Modus" /></SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="fastsearch">🚀 Fast</SelectItem>
+                                            <SelectItem value="deepsearch">🔍 Deep</SelectItem>
+                                        </SelectContent>
+                                    </Select>
+                                    <Input 
+                                        placeholder="Wohin soll es gehen?" 
+                                        value={searchQuery} 
+                                        onChange={(e) => setSearchQuery(e.target.value)}
+                                        className="flex-1"
+                                    />
+                                    <Button type="submit" disabled={isLoading || isSearching}>
+                                        {isLoading ? <Loader2 className="animate-spin h-4 w-4"/> : <Search className="h-4 w-4" />}
+                                    </Button>
+                                </form>
                             </div>
-                            {searchMode === 'none' && (
-                                <p className="text-sm text-amber-600 mt-2 text-center">
-                                    ⚠️ Bitte wählen Sie einen Suchmodus aus
-                                </p>
-                            )}
                         </CardContent>
                     </Card>
                 </div>
 
-                <Map
-                    position={[51.1657, 10.4515]}
-                    zoom={6}
-                    markerPosition={markerPosition}
-                />
+                {/* Map Container */}
+                <div className="absolute inset-0 z-0">
+                   {/* Der Key erzwingt Re-Mount bei signifikanter Änderung, um Marker-Probleme zu fixen */}
+                   <Map
+                        key={`map-${mapPosition.center[0]}-${mapPosition.center[1]}-${markers.length}`}
+                        position={mapPosition.center}
+                        zoom={mapPosition.zoom}
+                        markers={markers}
+                    />
+                </div>
 
-                {(searchedAddress || activities.length > 0 || showLoader) && (
-                    <aside className="absolute top-24 right-4 w-[360px] z-10">
-                        <Card className="bg-card/30 shadow-lg backdrop-blur-sm max-h-[calc(100vh-7rem)] overflow-y-auto">
-                            <CardHeader>
-                                <CardTitle>
-                                    {showLoader 
-                                        ? `Suche... (${getSearchModeDisplayName(searchMode)})` 
-                                        : (activities.length > 0 
-                                            ? `Aktivitäten in ${searchQuery}`
-                                            : "Dein Urlaubsziel:"
-                                          )
-                                    }
+                {/* Sidebar Results */}
+                {(searchedAddress || activities.length > 0 || isLoading) && (
+                    <aside className="absolute top-24 right-4 w-[360px] z-[999] max-w-[calc(100vw-2rem)]">
+                        <Card className="bg-background/95 shadow-xl backdrop-blur-md border-muted max-h-[calc(100vh-8rem)] flex flex-col">
+                            <CardHeader className="pb-2">
+                                <CardTitle className="text-lg flex items-center justify-between">
+                                    <span>{isLoading ? "Suche..." : (activities.length > 0 ? "Ergebnisse" : "Ort")}</span>
+                                    {!isLoading && <span className="text-xs font-normal text-muted-foreground bg-muted px-2 py-1 rounded-full">
+                                      {markers.length} auf Karte
+                                    </span>}
                                 </CardTitle>
-                                {activities.length > 0 && (
-                                    <p className="text-sm text-muted-foreground">
-                                        Modus: {getSearchModeDisplayName(searchMode)} • {activities.length} Ergebnisse
-                                    </p>
-                                )}
+                                {searchedAddress && <p className="text-xs text-muted-foreground truncate">{searchedAddress}</p>}
                             </CardHeader>
-                            <CardContent>
-                                {showLoader ? (
-                                    <div className="flex items-center justify-center p-8 gap-2">
-                                        <Loader2 className="animate-spin h-8 w-8 text-primary" />
-                                        <div className="text-center">
-                                            <span className="text-lg block">
-                                                {searchMode === 'fastsearch' && '🚀 Schnellsuche läuft...'}
-                                                {searchMode === 'deepsearch' && '🔍 Tiefensuche läuft...'}
-                                                {searchMode === 'none' && 'Suche wird vorbereitet...'}
-                                            </span>
-                                            <span className="text-sm text-muted-foreground block mt-1">
-                                                {searchMode === 'deepsearch' && 'Dies kann etwas länger dauern...'}
-                                            </span>
-                                        </div>
+                            <CardContent className="overflow-y-auto flex-1 p-4 pt-0 custom-scrollbar">
+                                {isLoading ? (
+                                    <div className="flex flex-col items-center justify-center py-12 gap-4">
+                                      <Loader2 className="animate-spin h-8 w-8 text-primary" />
+                                      <p className="text-sm text-muted-foreground">Durchsuche das Web...</p>
                                     </div>
                                 ) : (
-                                    <>
-                                        {activities.length > 0 ? (
-                                            <div className="grid grid-cols-1 gap-4">
-                                                {activities.map((activity, index) => (
-                                                    <ActivityCard 
-                                                        key={index} 
-                                                        activity={activity as Activity}
-                                                    />
-                                                ))}
-                                            </div>
-                                        ) : (
-                                            <div className="p-4">
-                                                <p className="mb-2">{searchedAddress}</p>
-                                                <p className="text-sm text-muted-foreground">
-                                                    Suchmodus: {getSearchModeDisplayName(searchMode)}
-                                                </p>
-                                            </div>
-                                        )}
-                                    </>
+                                    activities.length > 0 ? (
+                                        <div className="grid gap-4 pt-2">
+                                            {activities.map((act, i) => <ActivityCard key={i} activity={act as Activity} />)}
+                                        </div>
+                                    ) : (
+                                        <div className="py-8 text-center text-muted-foreground">
+                                            <MapPin className="h-12 w-12 mx-auto mb-2 opacity-20" />
+                                            <p>Keine Aktivitäten gefunden.</p>
+                                        </div>
+                                    )
                                 )}
                             </CardContent>
                         </Card>
